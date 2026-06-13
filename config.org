@@ -1,0 +1,1400 @@
+
+#+TITLE: Emacs Init File
+#+STARTUP: overview
+
+The "literate" version of my init file. 
+
+Lexical binding is needed to because the consult configuration makes use of lexical closures. 
+#+BEGIN_SRC emacs-lisp :tangle yes
+;; -*- lexical-binding: t; -*-
+;; (toggle-debug-on-error)   ;; for debugging init file.
+#+END_SRC
+
+* Core Emacs setup
+** Utilities
+First some utility functions that widely used. 
+
+#+BEGIN_SRC emacs-lisp  :tangle yes
+  (defun add-load-path (new-path)
+    (add-to-list 'load-path (expand-file-name new-path)
+                 t))
+
+  (defun capitalize-words (title)
+    (replace-regexp-in-string "_" " " (capitalize title)))
+#+END_SRC
+
+** Debugger support
+
+#+BEGIN_SRC emacs-lisp  :tangle yes
+  (add-hook 'emacs-lisp-mode-hook 
+            #'(lambda () (local-set-key "\^Xx" 'edebug-defun)))
+
+  ;; (setq warning-minimum-level :error)
+
+  (autoload 'edebug-defun "edebug")
+#+END_SRC
+
+** OS Environment
+
+We maintain a list of symbols that represent features we may want to turn on in the init file here. The list is kept in the ~os-environment~ variable. 
+
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (defvar os-environment ()
+    "Used to conditionalize loading of features based on the OS")
+
+  (when (string-match "darwin" (version))
+    (add-to-list 'os-environment 'macos))
+
+  (when (string-match "linux" (version))
+    (add-to-list 'os-environment 'linux))
+
+  (when (string-match "bash" shell-file-name)
+    (add-to-list 'os-environment 'bash))
+
+  (when (or (string-match "google" (system-name))
+  	  ;; The following was a Brushetta system name
+  	  (string-match "zippel83" (system-name)))
+    (add-to-list 'os-environment 'google))
+#+END_SRC
+
+Don't accidentally exit, and make sure that when you do exit all unsaved buffers are saved. 
+#+BEGIN_SRC emacs-lisp  :tangle yes
+  (defun my-exit-from-emacs ()
+    (interactive)
+    (if (yes-or-no-p "Do you want to exit ")
+        (save-buffers-kill-emacs)))
+#+END_SRC
+
+Backup files are stored in the system's temp directory (typically ~/tmp~)  not in the directory where the source files are kept. 
+#+BEGIN_SRC emacs-lisp  :tangle yes
+    (unless backup-inhibited
+      (setq backup-directory-alist
+            `((".*" . ,temporary-file-directory)))
+      (setq auto-save-file-name-transforms
+          `((".*" ,temporary-file-directory t)))
+  #+END_SRC
+
+Remove backup files that are more than one week old. 
+  #+BEGIN_SRC emacs-lisp  :tangle yes
+    (let ((week (* 60 60 24 7))
+          (current (float-time (current-time))))
+      (dolist (file (directory-files temporary-file-directory t))
+        (when (and (backup-file-name-p file)
+                   (> (- current (float-time (file-attribute-access-time (file-attributes file))))
+                      week))
+          (message "%s" file)
+          (delete-file file)))))
+#+END_SRC
+
+** Initialize the use-package mechanism
+#+BEGIN_SRC emacs-lisp  :tangle yes
+  (require 'package)
+  (setq package-enable-at-startup nil)
+  (setq gnutls-algorithm-priority "NORMAL:-VERS-TLS1.3")
+
+  ;; These two are the default
+  ;; nongnu is needed to support Roam.
+  ;; (add-to-list 'package-archives '("gnu" . "https://elpa.gnu.org/packages/") t)
+  ;; (add-to-list 'package-archives '("nongnu" . "https://elpa.nongnu.org/nongnu/") t)
+
+  ;; Comment/uncomment this line to enable MELPA Stable if desired.  See `package-archive-priorities`
+  ;; and `package-pinned-packages`. Most users will not need or want to do this.
+  ;; (add-to-list 'package-archives '("melpa-stable" . "https://stable.melpa.org/packages/") t)
+
+  (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
+
+  (package-initialize)
+
+  (unless (package-installed-p 'use-package)
+    (package-refresh-contents)
+    (package-install 'use-package))
+
+  (require 'use-package)
+  (setq use-package-verbose t)
+  (setq use-package-always-ensure t)
+  (setq load-prefer-newer t)
+#+END_SRC
+
+  Modern tools for working with files.  See [[https://github.com/rejeep/f.el][f.el documentation]] for more information.
+#+BEGIN_SRC emacs-lisp  :tangle yes
+(use-package f)
+#+END_SRC
+
+
+** Graphical Themes
+Set the default fixed and variable width fonts. Since there are different fonts available on MacOS and Crostini/Bruschetta, this needs to be customized per ~os-environment~. It should probably also be customized by the size of the screen, but that hasn't been done yet. 
+#+BEGIN_SRC emacs-lisp :tangle yes
+  ;; Faces
+  (cond ((memq 'macos os-environment)
+         (set-face-attribute 'fixed-pitch nil :family "Menlo" :height 150)
+         (set-face-attribute 'variable-pitch nil
+  			   :family "Lucida Grande"
+  			   :slant 'normal :weight 'regular
+  			   :height 150 :width 'normal))
+        (t
+         (set-face-attribute 'fixed-pitch nil :family "Cousine" :height 110)
+         (set-face-attribute 'variable-pitch nil :family "Roboto" :foundry "GOOG"
+  			   :slant 'normal :weight 'regular
+  			   :height 110 :width 'normal)))
+#+END_SRC
+
+Turn off the fancy graphical toolbar since I don't use it and it takes up space.  In Crostini, setting the frame-position doesn't do anything. Also the arguments to ~set-frame-size~ are reversed, width followed by height. 
+#+BEGIN_SRC emacs-lisp  :tangle yes
+  (display-time)
+
+  (when window-system
+    (setq-default visible-bell nil)
+    (setq frame-resize-pixelwise t)
+
+    (cond ((memq 'macos os-environment)
+  	 (set-frame-size (selected-frame) 100 60)
+  	 ;; The following doesn't seem to do anything in Crostini
+  	 (set-frame-position (selected-frame) 0 0))
+  	(t 
+  	 (set-frame-size (selected-frame) 91 48)))
+    ;; This eliminates the fancy toolbar that takes up a lot of space.
+    (tool-bar-mode -1)
+    )
+#+END_SRC
+
+#+BEGIN_SRC emacs-lisp :tangle no
+  ;; Figure out what the parameters mean 
+  (defun show-frame-parameters (&optional frame)
+    "Show the parameters of the specified FRAME, 
+     or the current frame if nil: name, size, colors, fonts, and faces."
+    (interactive)
+    (let ((faces '(bold bold-italic default highlight italic
+                        region secondary-selection underline))
+
+          (names '(name left top height width window-id minibuffer font
+                        auto-raise auto-lower vertical-scroll-bars
+                        horizontal-scroll-bars icon-type
+                        foreground-color background-color  mouse-color
+                        cursor-color border-color cursor-type
+                        border-width internal-border-width unsplittable
+                        visibility menu-bar-lines parent-id))
+          (params (frame-parameters nil)))
+      (with-output-to-temp-buffer "*Frame Parameters*"
+        (mapcar #'(lambda (name)
+                    (princ (format "%-24s %s\n" name (cdr (assq name params)))))
+                names)
+        (mapcar #'(lambda (facename)
+                    (princ (format
+                            "face %-19s background %-14s  foreground %-14s\n"
+                            facename (face-background facename nil)
+                            (face-foreground facename nil))))
+                faces))))
+
+#+END_SRC
+
+** Themes
+Only enable one of these themes.
+
+Use the Spacemacs default theme with a few tweaks.
+#+BEGIN_SRC emacs-lisp :tangle no
+  (use-package spacemacs-theme
+    :defer t
+    :ensure t
+    :init
+    (setq spacemacs-theme-org-bold nil
+          spacemacs-theme-org-height t
+          spacemacs-theme-comment-bg t)
+    )
+
+  (setq theme-color 'light)
+
+  (cond ((eq theme-color 'dark)
+         (setq spacemacs-theme-custom-colors
+               ;; Increase the contrast of the main text
+               '((base . "#ffffff") ;; Default: #b2b2b2
+                 ))
+
+         (load-theme 'spacemacs-dark t))
+        ((eq theme-color 'light)
+         (setq spacemacs-theme-custom-colors
+               ;; Increase the contrast of the main text
+               '((base . "#000000") ;; default: #655370
+                 ))
+
+         (load-theme 'spacemacs-light t))
+        (t
+         (error "No valid theme color provided")))
+#+END_SRC
+
+Zenburn is a low contrast dark scheme that is popular.  No customization
+#+BEGIN_SRC emacs-lisp :tangle no
+  (use-package zenburn-theme)
+#+END_SRC
+
+Leuven is fairly nice. Customizations need to be done prior to loading the package.
+
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (setq leuven-scale-org-agenda-structure nil)
+
+  (use-package leuven-theme)
+
+  (load-theme 'leuven t)
+
+  (setq org-fontify-whole-heading-line t)  
+#+END_SRC
+
+** Global commands and bindings
+Make some commands be the same between Emacs and Google docs so I don't keep breaking my fingers. 
+#+BEGIN_SRC emacs-lisp :tangle yes
+
+  (defun my-right-word-mark ()
+    (interactive)
+    (if (not (region-active-p))
+        (set-mark-command nil))
+    (right-word))
+
+  (defun my-left-word-mark ()
+    (interactive)
+    (if (not (region-active-p))
+        (set-mark-command nil))
+    (left-word))
+
+  (define-key global-map (kbd "C-S-<right>") 'my-right-word-mark)
+  (define-key global-map (kbd "C-S-<left>") 'my-left-word-mark)
+
+  (define-key global-map "\C-z" 'undo)
+  (define-key global-map  (kbd "C-/") 'comment-or-uncomment-region)
+#+END_SRC
+
+#+BEGIN_SRC emacs-lisp  :tangle yes
+  (defun pop-to-old-buffer ()
+    (interactive)
+    (let ((new-buf (completing-read "Buffer Name: "
+                                    (mapcar 'list (mapcar 'buffer-name (buffer-list)))
+                                    nil t)))
+      (switch-to-buffer new-buf)))
+
+  (define-key global-map "\C-x\C-c" 'my-exit-from-emacs)
+
+  (define-key global-map "\C-x\C-m" 'write-modified-files)
+  ;; (define-key global-map "\M-s" 'center-line)
+
+  (put 'narrow-to-region 'disabled nil)
+  (put 'eval-expression 'disabled nil)
+  (put 'downcase-region 'disabled nil)
+
+  (setq max-lisp-eval-depth 1001)
+#+END_SRC
+
+*** Special for Aquaemacs
+
+#+BEGIN_SRC emacs-lisp  :tangle no
+;; Special for Aquaemacs
+(when (memq 'macos os-environment)
+  (setq recenter-positions '(middle)))
+#+END_SRC
+
+** golink-ify
+~alg/linkify-golink~ transforms a go/ link into a valid org-mode or markdown-mode link.  If called with an argument, then it just replaces the go/link with the raw URL instead of  replacing it with org or markdown markup. I don't actually use this right now. 
+
+ The function ~linkify~ searches a buffer for links and transforms them into org-mode links.  This is the function that is used the most. 
+
+ #+BEGIN_SRC emacs-lisp :tangle yes 
+   (defun alg/linkify-pattern-private (&optional arg regexp-pattern url-format)
+     "Detects REGEXP-PATTERN and replaces it with a md or org link.
+
+     To build the URL, extracts the the 1st matched group from
+     REGEXP-PATTERN and substitutes at for %s in URL-FORMAT.
+
+     If arg is non-nil, replaces with the bare url.
+
+     Returns nil if the pattern is not detected."
+     (if-let ((thing (thing-at-point-looking-at regexp-pattern)))
+         (let* ((beg (match-beginning 0))
+                (end (match-end 0))
+                (path (buffer-substring-no-properties
+   		    (match-beginning 1)
+   		    (match-end 1)))
+                (url (format url-format path) ))
+           (if arg
+               ;; replacing with the bare url
+               (progn 
+                 (message "Replacing go/ link with %s" url)
+                 (replace-region-contents beg end (lambda () url)))
+             ;; replacing with a markup link
+             (cond
+              ((equal major-mode 'markdown-mode)
+               (progn
+                 (message "Replacing with a md link")
+                 (replace-region-contents 
+                  beg end
+                  (lambda ()
+                    (format "[%s](%s)" 
+                            (buffer-substring-no-properties beg end) url)))))
+              ((equal major-mode 'org-mode)
+               (progn
+                 (message "Replacing with org link")
+                 (replace-region-contents 
+                  beg end
+                  (lambda ()
+                    (format "[[%s][%s]]" url
+                            (buffer-substring-no-properties beg end))))))
+              (t (progn (message "unknown mode") nil)))))))
+
+#+END_SRC
+
+
+** Tree Sitter Support
+#+BEGIN_SRC emacs-lisp :tangle no
+  ;; (require 'tree-sitter)
+  ;; (require 'tree-sitter-langs)
+
+  (setq treesit-language-source-alist
+     '((bash "https://github.com/tree-sitter/tree-sitter-bash")
+       (cmake "https://github.com/uyha/tree-sitter-cmake")
+       (cpp "https://github.com/tree-sitter/tree-sitter-cpp") ;; added
+       (css "https://github.com/tree-sitter/tree-sitter-css")
+       (elisp "https://github.com/Wilfred/tree-sitter-elisp")
+       (go "https://github.com/tree-sitter/tree-sitter-go")
+       (html "https://github.com/tree-sitter/tree-sitter-html")
+       (java "https://github.com/tree-sitter/tree-sitter-java") ;; added
+       (javascript "https://github.com/tree-sitter/tree-sitter-javascript" "master" "src")
+       (json "https://github.com/tree-sitter/tree-sitter-json")
+       (make "https://github.com/alemuller/tree-sitter-make")
+       (markdown "https://github.com/ikatyang/tree-sitter-markdown")
+       (python "https://github.com/tree-sitter/tree-sitter-python")
+       (regex  "https://github.com/tree-sitter/tree-sitter-regex") ;; added
+       (toml "https://github.com/tree-sitter/tree-sitter-toml")
+       (tsx "https://github.com/tree-sitter/tree-sitter-typescript" "master" "tsx/src")
+       (typescript "https://github.com/tree-sitter/tree-sitter-typescript" "master" "typescript/src")
+       (yaml "https://github.com/ikatyang/tree-sitter-yaml")))
+
+  (global-tree-sitter-mode)
+
+#+END_SRC
+* Flyspell
+The enables spell checking of buffers using the ~hunspell~ package, if its available. This is not always the case so later portions of this init file may need to be condtionalized on ~(featurep 'flyspell)~,
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (when (executable-find "hunspell")
+    (use-package flyspell
+      :init
+      (setq ispell-dictionary "en_US")
+      (setq ispell-program-name (executable-find "hunspell"))
+      (setq ispell-really-hunspell t)
+      (setq ispell-local-dictionary-alist
+  	  ;; Please note the list `("-d" "en_US")` contains ACTUAL
+  	  ;; parameters passed to hunspell You could use `("-d"
+  	  ;; "en_US,en_US-med")` to check with multiple dictionaries
+  	  '(("en_US" "[[:alpha:]]" "[^[:alpha:]]" "[']" nil ("-d" "en_US") nil utf-8)))
+      :hook (prog-mode . flyspell-prog-mode)
+      (text-mode . flyspell-mode)))
+  #+END_SRC
+
+* Magit
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (use-package magit
+    :after compat
+    :bind (("C-x g" . magit-status)))
+#+END_SRC
+
+* Consult and Friends
+We use Vertico / Consult with Marginalia.
+
+Vertico provides extends the completion functionality for minibuffers, but puting the options in to a vertical list. It does very little beyond that. 
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (use-package vertico
+    :ensure t
+    :custom (vertico-cycle nil)
+    :init (vertico-mode)
+    )
+#+END_SRC
+
+
+Enable annotations of the options in the minibuffer completion area  using the Marginalia package. Marginalia mode is initialized immediately on loading, which among other things, forces the package to be loaded. 
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (use-package marginalia
+    :after vertico
+    :ensure t
+    :custom
+    (marginalia-annotators '(marginalia-annotators-heavy marginalia-annotators-light nil))
+    ;; Either bind `marginalia-cycle' globally or only in the minibuffer
+    :bind (:map minibuffer-local-map
+  	  ("M-A" . marginalia-cycle))
+
+    :init  (marginalia-mode))
+#+END_SRC
+
+Orderless provides custom mechanisms for splitting pieces of a completion search into parts.  This is most useful when searches involve multiple words. 
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (use-package orderless
+    :ensure t
+    :custom
+    (completion-styles '(orderless basic))
+    (completion-category-overrides
+     '((file (styles basic partial-completion)))))
+#+END_SRC
+
+Import of the ~consult~ package with a bunch of bindings.  This replaces the default functions bound to the specific keys to consult versions that much better completion. 
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (use-package consult
+    ;; Replace bindings. Lazily loaded due by `use-package'.
+    :bind (;; C-c bindings (mode-specific-map)
+           ("C-c M-x" . consult-mode-command)
+           ("C-c h" . consult-history)
+           ("C-c k" . consult-kmacro)
+           ("C-c m" . consult-man)
+           ("C-c i" . consult-info)
+           ([remap Info-search] . consult-info)
+           ;; C-x bindings (ctl-x-map)
+           ("C-x M-:" . consult-complex-command)     ;; orig. repeat-complex-command
+           ("C-x b" . consult-buffer)                ;; orig. switch-to-buffer
+           ("C-x 4 b" . consult-buffer-other-window) ;; orig. switch-to-buffer-other-window
+           ("C-x 5 b" . consult-buffer-other-frame)  ;; orig. switch-to-buffer-other-frame
+           ("C-x r b" . consult-bookmark)            ;; orig. bookmark-jump
+           ("C-x p b" . consult-project-buffer)      ;; orig. project-switch-to-buffer
+           ;; Custom M-# bindings for fast register access
+           ("M-#" . consult-register-load)
+           ("M-'" . consult-register-store)          ;; orig. abbrev-prefix-mark (unrelated)
+           ("C-M-#" . consult-register)
+           ;; Other custom bindings
+           ("M-y" . consult-yank-pop)                ;; orig. yank-pop
+           ;; M-g bindings (goto-map)
+           ("M-g e" . consult-compile-error)
+           ("M-g f" . consult-flymake)               ;; Alternative: consult-flycheck
+           ("M-g g" . consult-goto-line)             ;; orig. goto-line
+           ("M-g M-g" . consult-goto-line)           ;; orig. goto-line
+           ("M-g o" . consult-outline)               ;; Alternative: consult-org-heading
+           ("M-g m" . consult-mark)
+           ("M-g k" . consult-global-mark)
+           ("M-g i" . consult-imenu)
+           ("M-g I" . consult-imenu-multi)
+
+           ;; M-s bindings (search-map)
+           ("M-s d" . consult-find)
+           ("M-s D" . consult-locate)
+           ("M-s g" . consult-grep)
+           ("M-s G" . consult-git-grep)
+           ("M-s r" . consult-ripgrep)
+           ("M-s l" . consult-line)
+           ("M-s L" . consult-line-multi)
+           ("M-s k" . consult-keep-lines)
+           ("M-s u" . consult-focus-lines)
+
+           ;; Isearch integration
+           ("M-s e" . consult-isearch-history)
+           :map isearch-mode-map
+           ("M-e" . consult-isearch-history)         ;; orig. isearch-edit-string
+           ("M-s e" . consult-isearch-history)       ;; orig. isearch-edit-string
+           ("M-s l" . consult-line)                  ;; needed by consult-line to detect isearch
+           ("M-s L" . consult-line-multi)            ;; needed by consult-line to detect isearch
+           ;; Minibuffer history
+           :map minibuffer-local-map
+           ("M-s" . consult-history)                 ;; orig. next-matching-history-element
+           ("M-r" . consult-history))                ;; orig. previous-matching-history-element
+
+    ;; Enable automatic preview at point in the *Completions* buffer. This is
+    ;; relevant when you use the default completion UI.
+    :hook (completion-list-mode . consult-preview-at-point-mode)
+
+    ;; The :init configuration is always executed (Not lazy)
+    :init
+
+    ;; Optionally configure the register formatting. This improves the register
+    ;; preview for `consult-register', `consult-register-load',
+    ;; `consult-register-store' and the Emacs built-ins.
+    (setq register-preview-delay 0.5
+          register-preview-function #'consult-register-format)
+
+    ;; Optionally tweak the register preview window.
+    ;; This adds thin lines, sorting and hides the mode line of the window.
+    (advice-add #'register-preview :override #'consult-register-window)
+
+    ;; Use Consult to select xref locations with preview
+    (setq xref-show-xrefs-function #'consult-xref
+          xref-show-definitions-function #'consult-xref)
+
+    ;; Configure other variables and modes in the :config section,
+    ;; after lazily loading the package.
+    :config
+
+    ;; Optionally configure preview. The default value
+    ;; is 'any, such that any key triggers the preview.
+    ;; (setq consult-preview-key 'any)
+    ;; (setq consult-preview-key "M-.")
+    ;; (setq consult-preview-key '("S-<down>" "S-<up>"))
+    ;; For some commands and buffer sources it is useful to configure the
+    ;; :preview-key on a per-command basis using the `consult-customize' macro.
+    (consult-customize
+     consult-ripgrep consult-git-grep consult-grep consult-man
+     consult-bookmark consult-recent-file consult-xref
+     consult-source-bookmark consult-source-file-register
+     consult-source-recent-file consult-source-project-recent-file
+     ;; :preview-key "M-."
+     consult-theme :preview-key '(:debounce 0.4 any) ;; Delay preview
+        )
+
+    ;; Optionally configure the narrowing key.
+    ;; Both < and C-+ work reasonably well.
+    (setq consult-narrow-key "<") ;; "C-+"
+
+    ;; Optionally make narrowing help available in the minibuffer.
+    ;; You may want to use `embark-prefix-help-command' or which-key instead.
+    ;; (define-key consult-narrow-map (vconcat consult-narrow-key "?") #'consult-narrow-help)
+
+    ;; By default `consult-project-function' uses `project-root' from project.el.
+    ;; Optionally configure a different project root function.
+    ;;;; 1. project.el (the default)
+    ;; (setq consult-project-function #'consult--default-project--function)
+    ;;;; 2. vc.el (vc-root-dir)
+    ;; (setq consult-project-function (lambda (_) (vc-root-dir)))
+    ;;;; 3. locate-dominating-file
+    ;; (setq consult-project-function (lambda (_) (locate-dominating-file "." ".git")))
+    ;;;; 4. projectile.el (projectile-project-root)
+    ;; (autoload 'projectile-project-root "projectile")
+    ;; (setq consult-project-function (lambda (_) (projectile-project-root)))
+    ;;;; 5. No project support
+    ;; (setq consult-project-function nil)
+    )
+#+END_SRC
+
+* Latex Support
+#+BEGIN_SRC emacs-lisp :tangle no
+
+  (when (not (memq 'macos os-environment))
+    ;; pdf-tools doesn't exist on mac-os
+    (use-package pdf-tools
+      :ensure t
+      :config
+      (pdf-tools-install)
+      (setq-default pdf-view-display-size 'fit-page)
+      (setq pdf-annot-activate-created-annotations t)
+      (define-key pdf-view-mode-map (kbd "C-s") 'isearch-forward)
+      (define-key pdf-view-mode-map (kbd "C-r") 'isearch-backward)
+      ))
+#+END_SRC
+
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (when (executable-find "latex")
+    (use-package auctex-latexmk
+      :ensure t
+      :config
+      (auctex-latexmk-setup)
+      (setq auctex-latexmk-inherit-TeX-PDF-mode t))
+
+    (use-package reftex
+      :ensure t
+      :config
+      (setq reftex-cite-prompt-optional-args t)) ;; Prompt for empty optional arguments in cite
+
+    (when (featurep 'flyspell)
+      (use-package auto-dictionary
+      :ensure t
+      :init (add-hook 'flyspell-mode-hook (lambda () (auto-dictionary-mode 1)))
+      :bind (("<mouse-3>" . flyspell-correct-word))
+      )))
+#+END_SRC
+
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (when (executable-find "latex")
+    (use-package tex
+      :ensure auctex
+      :mode ("\\.tex\\'" . latex-mode)
+      :config
+      (cond ((memq 'macos os-environment)
+  	   (setenv "PATH" "/Library/TeX/texbin/:$PATH" t))
+  	  (t
+  	   (setenv "PATH" "/usr/local/texlive/2024/bin/x86_64-linux/:$PATH" t)))
+      (setq TeX-source-correlate-mode t)
+      (setq TeX-source-correlate-method 'synctex)
+      (setq TeX-auto-save t)
+      (setq TeX-parse-self t)
+      ;;(setq-default TeX-master "paper.tex")
+      ;;  (setq TeX-macro-global (cl-pushnew "~/texmf/tex/latex/" TeX-macro-global :test 'string=))
+      (setq TeX-macro-private (list "~/texmf/tex/latex/"))
+      (setq reftex-plug-into-AUCTeX t)
+      ;; (pdf-tools-install)
+      (setq TeX-view-program-selection '((output-pdf "PDF Tools"))
+  	  TeX-source-correlate-start-server t)
+      ;; Update PDF buffers after successful LaTeX runs
+      (add-hook 'TeX-after-compilation-finished-functions
+  	      #'TeX-revert-document-buffer)
+      (add-hook 'LaTeX-mode-hook
+  	      (lambda ()
+  		(reftex-mode t)
+  		(if (featurep 'flyspell)
+  		    (flyspell-mode t)))))
+
+    (add-to-list 'auto-mode-alist '("\\.sty$" . tex-mode))
+    (add-to-list 'auto-mode-alist '("\\.bbl$" . tex-mode))
+    (add-to-list 'auto-mode-alist '("\\.tex$" . tex-mode))
+    (add-to-list 'auto-mode-alist '("\\.bib$" . bibtex-mode)))
+
+#+END_SRC
+
+* Eglot / LTeX Support
+This is pretty complicated to set up so it's disabled by default.  The code here really doesn't work anyway.
+
+#+BEGIN_SRC emacs-lisp :tangle no
+  (load-file "~/.emacs.d/elpa/eglot-ltex/eglot-ltex.el")
+
+  (use-package eglot
+    :ensure t
+    :hook (org-mode . (lambda ()
+                        (require 'eglot-ltex)
+                        (eglot-ensure)))
+    :init
+    (setq org-src-fontify-natively t)
+    (setq eglot-ltex-server-path "~/.emacs.d/.cache/lsp/ltex-ls-plus-18.6.1/bin/ltex-ls-plus"
+          eglot-ltex-communication-channel 'stdio))
+
+  (with-eval-after-load 'eglot
+    (setq-default eglot-workspace-configuration
+                  '(:ltex (:language "en-US"
+                          :diagnosticRules (:enabled true)
+                          :motherTongue "en"
+                          :completionEnabled t))))
+#+END_SRC
+
+* Org Mode
+
+Support of exporting to Markdown.  Disabled for now. 
+#+BEGIN_SRC emacs-lisp :tangle no
+  (use-package ox-md
+    :config
+    (setq org-md-headline-style 'atx)
+    (use-package ox-mfg
+      :ensure t))
+#+END_SRC
+
+Make the formatting of org text in emacs pretty.  Use pretty fonts, don't underline idents. 
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (setq org-variable-spaced-fonts t)
+
+  (defface org-dont-underline-indents '((t :underline nil))
+      "Avoid underlining of indentation.")
+
+  (defun org-dont-underline-indents ()
+    "Remove underlining at indents."
+    (add-to-list 'org-font-lock-extra-keywords
+                 '("^[[:space:]]+" 0 'org-dont-underline-indents t)
+                 'append))
+
+  (add-hook 'org-font-lock-set-keywords-hook #'org-dont-underline-indents 'append)
+#+END_SRC
+
+=org-appear= turns on the emphasis markers so you can see the hidden characters, especially useful for links, when the cursor is within the emphasized text.  This is pretty useful, but its not on the GNU or non_GNU repositories, only MELPA.
+#+BEGIN_SRC emacs-lisp :tangle no
+  ;; Show hidden emphasis markers
+  (use-package org-appear
+    :hook (org-mode . org-appear-mode))
+#+END_SRC
+
+Customize he faces approprately for Org Mode. This is run when org-mode is loaded, not once per buffer.
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (defun rz/customize-org-faces ()
+    (set-face-attribute 'org-default  nil :inherit 'variable-pitch)
+
+    ;; (set-face-attribute 'org-block nil :foreground nil :inherit 'fixed-pitch)
+    (set-face-attribute 'org-code nil :inherit '(shadow fixed-pitch))
+    (set-face-attribute 'org-verbatim nil :inherit '(shadow fixed-pitch))
+    (set-face-attribute 'org-document-info nil :foreground "dark orange")
+    (set-face-attribute 'org-document-info-keyword nil :inherit '(shadow fixed-pitch))
+    (set-face-attribute 'org-link nil :foreground "royal blue" :underline t)
+    (set-face-attribute 'org-meta-line nil :inherit '(font-lock-comment-face fixed-pitch))
+    (set-face-attribute 'org-property-value nil :inherit 'fixed-pitch)
+    (set-face-attribute 'org-special-keyword nil
+  		      :inherit '(font-lock-comment-face fixed-pitch))
+     (set-face-attribute 'org-table nil :inherit 'fixed-pitch :foreground "#83a598")
+    ;;  (set-face-attribute 'org-table nil :inherit 'fixed-pitch :foreground "#111111")
+    (set-face-attribute 'org-tag nil :inherit '(shadow fixed-pitch)
+  		      :weight 'bold :height 0.8)
+    (set-face-attribute 'org-verbatim nil :inherit '(shadow fixed-pitch))
+
+    (dolist (face '(
+  		  org-block
+                    org-block-begin-line 
+                    org-block-end-line 
+                    org-verbatim 
+                    ;; org-block-background
+                    ))
+      (set-face-attribute face nil :inherit 'fixed-pitch))
+
+    (custom-theme-recalc-face 'org-block)
+    (custom-theme-recalc-face 'org-table)
+    )
+#+END_SRC
+
+This function defines all the defaults that need to be run whenever we start org-mode.
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (defun rz/org-mode-setup ()
+    ;; This is run every time a org-mode buffer is opened.
+    (setq fill-column 100
+          org-pretty-entities t
+          org-adapt-indentation nil
+          org-support-shift-select t
+          org-format-latex-options
+          '(:foreground default :background default :scale 1.4
+                        :html-foreground "Black"
+  		      :html-background "Transparent"
+                        :html-scale 1.4
+                        :matchers ("begin" "$1" "$" "$$" "\\(" "\\[")))
+
+    (rz/customize-org-faces)
+
+    (if (featurep 'flyspell)
+        (flyspell-mode))
+
+    (cond (org-variable-spaced-fonts
+           (variable-pitch-mode)
+           (visual-line-mode)
+  	 (valign-mode))
+          (t
+           (auto-fill-mode t)))
+
+    (setq org-fold-catch-invisible-edits 'show)
+    (setq org-link-descriptive t)
+    )
+#+END_SRC
+
+This is used to make columns in tables work well.
+#+BEGIN_SRC emacs-list :tangle yes
+  (use-package valign
+    :init (setq valign-fancy-bar t))
+
+  (use-package ob-http)
+  
+#+END_SRC
+
+
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (use-package org
+    :ensure nil
+    :custom (org-roam-database-connector 'sqlite-builtin)
+    :hook (org-mode . rz/org-mode-setup)
+    :init
+    (setq org-default-notes-file "refile.org")
+    (setq org-directory "~/Notes")
+    (setq org-agenda-files
+  	  (list "~/Notes/"
+  		;; "~/Notes/documents/"   ;; Kept separate for exporting
+  		"~/Notes/external/"
+  		;; "~/Notes/people/"  ;; Don't search the list of people
+  		"~/Notes/policy/"
+  		"~/Notes/strategy/"
+  		"~/Notes/technology/"
+  		))
+    (setq org-startup-indented nil
+  	  org-hide-leading-stars t
+  	  org-hide-emphasis-markers t
+  	  ;; Hide #+BEGIN and similar blocks 
+  	  org-hide-block-startup t
+  	  org-startup-folded 'showeverything
+  	  org-use-sub-superscripts "{}")
+    (org-babel-do-load-languages
+     'org-babel-load-languages
+     '((dot . t)
+       (emacs-lisp . t)
+       (python . t)
+       (shell . t)
+       (calc . t)
+       (js . t)
+       (sqlite . t)
+       (http . t)
+       (shell . t)
+       (R . t)))
+    (setq org-babel-python-command "python3")
+    ;; Syntax highlight in #+BEGIN_SRC blocks
+    (setq org-src-fontify-natively t)
+    ;; Don't prompt before running code in org
+    (setq org-confirm-babel-evaluate nil)
+
+    ;; org-mode bindings
+    :bind (("C-c a" . org-agenda)
+  	 ("C-c b" . org-switchb)
+  	 ;; I want to use tjhe org-roam capture version instead of  org-mode capture
+  	 ;; ("C-c c" . org-capture)
+  	 ;; Also want to use org-roam links, not org-mode links.
+  	 ;; ("C-c l" . org-store-link)
+  	 ("<prior>" . org-move-subtree-up)
+  	 ("<next>" . org-move-subtree-down))
+
+    :config
+    ;; This is the default setting
+    (setq org-blank-before-new-entry
+  	  '((heading . auto)
+  	    (plain-list-item . auto)))
+
+    (setq org-refile-targets
+  	  '((org-agenda-files :maxlevel . 2))
+  	  )
+
+    (setq org-refile-use-outline-path nil)
+    (setq org-refile-allow-creating-parent-nodes 'confirm)
+
+    (setq org-todo-keywords
+  	  '((sequence "TODO(t!)" "WORKING(w!)" "|"
+  		      "CANCELLED(c@)" "DONE(d!)")
+  	    (sequence "REVIEW(r!)" "|" "DONE(d!)")
+  	    ))
+    (setq org-todo-keyword-faces
+  	  '(("TODO" :foreground "red" :weight bold)
+  	    ("REVIEW" :foreground "magenta" :weight bold)
+  	    ("WORKING" :foreground "orange" :weight bold)
+  	    ("DONE" :foreground "forest green" :weight bold)
+  	    ;; Cancelled means this task is no longer relevant.
+  	    ("CANCELLED" :foreground "forest green" :weight bold)
+  	    ;; Means that this ToDo has been converted to a Buganizer issue or Todo in
+  	    ))
+    )
+#+END_SRC
+
+
+Nice priorities, but I don't really use these. 
+#+BEGIN_SRC emacs-lisp :tangle no
+  (use-package org-fancy-priorities
+    :ensure t
+    :after org
+    :hook (org-mode . org-fancy-priorities-mode)
+    :config
+    (setq org-priority-highest 0
+          org-priority-default 2
+          org-priority-lowest 4
+          org-fancy-priorities-list '((?0 . "P0") (?1 . "P1") (?2 . "P2")
+                                      (?3 . "P3") (?4 . "P4"))     
+          org-priority-faces '((?0 :foreground "DarkRed" :background "LightPink")
+                               (?1 :foreground "DarkOrange4" :background "LightGoldenrod")
+                               (?2 :foreground "gray20" :background "gray")
+                               (?3 :foreground "gray20" :background "gray")
+                               (?4 :foreground "gray20" :background "gray"))))
+#+END_SRC
+
+Pretty bullets instead of the just asterisks and plus signs. 
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (use-package org-superstar
+    :after org
+    :config
+    (setq org-superstar-headline-bullets-list '("◉" "○" "⚬" "◈" "◇"))
+    (setq org-superstar-remove-leading-stars t)
+    (setq org-superstar-item-bullet-alist
+         '((?* . ?➤)
+            (?+ . ?•)
+            (?- . ?○)))
+    :hook (org-mode . org-superstar-mode)
+    )
+#+END_SRC
+
+** org-web-tools integration
+
+This package converts URLs to file names, converts the HTML to org-mode and a lot else.  To use this for GoogleDocs (which is my most common usage) it requires the emacs client to sign in.  
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (use-package org-web-tools)
+
+  (defun org-web-tools-insert-link-for-clipboard-url ()
+    "Extend =org-web-tools-insert-link-for-url= to take URL from clipboard or kill-ring"
+    (interactive)			      
+    (org-web-tools--org-link-for-url (org-web-tools--get-first-url)))
+
+  (defun website-to-org-entry ()
+    "Convert clipboard's URL content to org entry."
+    (org-web-tools-insert-web-page-as-entry (org-get-x-clipboard 'PRIMARY)))
+#+END_SRC
+
+* Org Roam
+First, choose the window configuration to be used for Org Roam. If ~org-roam-use-side-window~ is set, then Org Roam windows will appear in a side window.
+#+BEGIN_SRC emacs-lisp :tangle yes
+  ;; Roam backlinks window on right side
+  (setq org-roam-use-side-window t)
+  (setq org-roam-mode-sections
+      '((org-roam-backlinks-section :unique t)
+        org-roam-reflinks-section))
+
+  (if org-roam-use-side-window
+      (add-to-list 'display-buffer-alist
+      '("\\*org-roam\\*"
+        (display-buffer-in-side-window)
+        (side . right)
+        (slot . 0)
+        (window-width . 0.33)
+        ;; (preserve-size . (t nil))
+        (window-parameters . ((no-other-window . t)
+                              (no-delete-other-windows . t)))))
+    (add-to-list 'display-buffer-alist
+                 '("\\*org-roam\\*"
+                   (display-buffer-in-direction)
+                   (direction . right)
+                   (window-width . 0.33)
+                   (window-height . fit-window-to-buffer))))
+#+END_SRC
+
+The following table is the capture templates used. This is pulled out into a single block since it is so long. Each page that is created has tag associated with it that indicates the type of content it contains.  Additional tags can be added. New nodes are created with an initial date stamp and are expanded mode.
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (setq zippel-roam-capture-templates
+        '(("i" "Individual" plain "%?"
+    	 :target (file+head "people/${slug}.org"
+    			    "#+title: ${title}\n#+date: %U\n#+filetags: :person:\n\n")
+    	 :unnarrowed t)
+    	("m" "Math" plain "%?"
+    	 :target (file+head "pages/${slug}.org"
+    			    "#+title: ${title}\n#+date: %U\n#+filetags: :math:\n\n")
+    	 :unnarrowed t)
+    	("p" "Physics" plain "%?"
+    	 :target (file+head "pages/${slug}.org"
+    			    "#+title: ${title}\n#+date: %U\n#+filetags: :physics:\n\n")
+    	 :unnarrowed t)
+    	("t" "Technology" plain "%?"
+    	 :target (file+head "pages/${slug}.org"
+    			    "#+title: ${title}\n#+date: %U\n#+filetags: :technology:\n\n")
+    	 :unnarrowed t)
+    	("d" "default" plain "%?"
+    	 :target (file+head "pages/${slug}.org"
+    			    "#+title: ${title}\n#+date: %U\n#+filetags: \n\n")
+    	 :unnarrowed t)))
+ #+END_SRC
+
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (use-package org-roam
+    :ensure t
+  ;;  :hook (after-init . org-roam-setup)
+    :init
+    (setq org-roam-v2-ack t)
+    (setq org-roam-directory (file-truename "~/Notes/"))
+    (setq org-roam-file-exclude-regexp "\\.git/.*\\|logseq|.*$")
+    :bind (("C-c n c" . org-roam-capture)
+  	 ("C-c n f" . org-roam-node-find)
+  	 :map org-mode-map
+  	 (("C-c C-w" . org-roam-refile)
+  	  ("<mouse-1>" . org-roam-visit-thing)
+  	  ("C-c n c" . org-roam-capture)
+  	  ("C-c n i" . org-roam-node-insert)
+  	  ("C-c n w" . org-web-tools-insert-link-for-url)
+  	  ("C-c n l" . org-id-get-create)
+  	  ("C-c n p" . org-roam-extract-subtree)
+  	  ("C-c n t" . org-roam-buffer-toggle)
+  	  ("C-c n +" . org-roam-alias-add)
+  	  ;; ("C-c n g" . org-roam-ui-open)  ;; disabled since unused.
+  	  )
+  	 :map org-roam-dailies-map
+  	 (("c" . org-roam-dailies-capture-date)
+  	  ("d" . org-roam-dailies-capture-today)
+  	  ("v" . org-roam-dialies-find-drectory)
+  	  ("." . org-roam-dailies-goto-today)
+  	  ("D" . org-roam-dailies-goto-today)
+  	  ("Y" . org-roam-dailies-goto-yesterday)
+  	  ("T" . org-roam-dailies-goto-tomorrow))
+  	 )
+    :bind-keymap
+    ("C-c d" . org-roam-dailies-map)
+    :config
+    (require 'org-roam-dailies)
+    (org-roam-db-autosync-mode)
+    (setq org-roam-extract-new-file-path "${slug}.org")
+    (setq org-roam-capture-templates zippel-roam-capture-templates)
+
+    (setq org-roam-node-display-template
+  	  (concat "${hierarchy:60} ${backlinkscount:6} "
+  		(propertize "${tags:30}" 'face 'org-tag)) 
+  	  ;; "${directories:10} ${tags:10} ${title:40} ${backlinkscount:6}"
+  	  ;; "${directories:10} ${title:40} ${tags:10} ${backlinkscount:6}"
+  	  ;; (concat "${type:4}   ${title:*} " (propertize "${tags:40}" 'face 'org-tag))
+  	  ;; (concat "${directories:5}   ${hierarchy:50} " (propertize "${type:40}" 'face 'org-tag))
+  	  ;; (concat "${type:4}   ${hierarchy:50} " (propertize "${tags:40}" 'face 'org-tag))
+  	  )
+    ;; Dailies setup.  this directory is used to be compatible with logseq.
+    (setq org-roam-dailies-directory "journals/")
+
+    (setq org-roam-dailies-capture-templates
+  	  '(("d" "default" entry
+  	     "* %<%I:%M %p>: %?"
+  	     :if-new
+  	     (file+head "%<%Y-%m-%d>.org" "#+title: %<%Y-%m-%d>\n")
+  	     )))
+    ;; These methods need to be within the use-package, otherwise org-roam-node
+    ;; might not be defined.
+    ;; They are used to format the node lines in org-roam-node-find.
+    (cl-defmethod org-roam-node-backlinkscount ((node org-roam-node))
+      ;; Compute and format the number of backlinks to node.
+      (let* ((count (caar (org-roam-db-query
+  			   [:select (funcall count source)
+  				    :from links
+  				    :where (= dest $s1)
+  				    :and (= type "id")]
+  			   (org-roam-node-id node)))))
+  	(format "[%d]" count)))
+
+    ;; Directory hierarchy setup
+    (cl-defmethod org-roam-node-filetitle ((node org-roam-node))
+      "Return the file TITLE for the node."
+      (org-roam-get-keyword "TITLE" (org-roam-node-file node)))
+
+    (cl-defmethod org-roam-node-hierarchy ((node org-roam-node))
+      "Return a string representing the hierarchy for the node."
+      (let ((title (org-roam-node-title node))
+  	    (olp (org-roam-node-olp node))
+  	    (level (org-roam-node-level node))
+  	    (directories (org-roam-node-directories node))
+  	    (filetitle (org-roam-node-filetitle node)))
+  	(concat
+  	 (if (> level 0) (concat filetitle " > "))
+  	 (if (> level 1) (concat (string-join olp " > ") " > "))
+  	 title
+  	 ;; (if directories (format " (%s)" directories))
+  	 )
+  	))
+
+    (cl-defmethod org-roam-node-directories ((node org-roam-node))
+      (if-let ((dirs (file-name-directory
+  		      (file-relative-name (org-roam-node-file node)
+  					  org-roam-directory))))
+  	  (string-join (f-split dirs) "/")
+  	nil))
+
+    (cl-defmethod org-roam-node-type ((node org-roam-node))
+      "Return the TYPE of NODE."
+      (condition-case nil
+  	  (file-name-nondirectory
+  	   (directory-file-name
+  	    (file-name-directory
+  	     (file-relative-name
+  	      (org-roam-node-file node)
+  	      org-roam-directory))))
+  	(error ""))))
+#+END_SRC
+
+I'm not sure what these are for, but they don't seem be being used either. 
+#+BEGIN_SRC emacs-lisp :tangle no
+  (defun my/org-roam-filter-by-tag (tag-name)
+    (lambda (node)
+      (member tag-name (org-roam-node-tags node))))
+
+
+  (defun my/org-roam-project-finalize-hook ()
+    "Adds the captured project file to `org-agenda-files' if the
+  capture was not aborted."
+    ;; Remove the hook since it was added temporarily
+    (remove-hook 'org-capture-after-finalize-hook #'my/org-roam-project-finalize-hook)
+
+    ;; Add project file to the agenda list if the capture was confirmed
+    (unless org-note-abort
+      (with-current-buffer (org-capture-get :buffer)
+  	(add-to-list 'org-agenda-files (buffer-file-name)))))
+#+END_SRC
+
+This is for the fancy graphic version of the Org-Roam, which is disabled since I don't use it. 
+#+BEGIN_SRC emacs-lisp :tangle no
+  ;;; websocket is needed for org-roam-ui
+  (use-package websocket
+      :after org-roam)
+
+  (use-package org-roam-ui
+      :after org-roam ;; or :after org
+  ;;         normally we'd recommend hooking orui after org-roam, but since org-roam does not have
+  ;;         a hookable mode anymore, you're advised to pick something yourself
+  ;;         if you don't care about startup time, use
+  ;;  :hook (after-init . org-roam-ui-mode)
+      :config
+      (setq org-roam-ui-sync-theme t
+            org-roam-ui-follow t
+            org-roam-ui-update-on-save t
+            org-roam-ui-open-on-start t))
+#+END_SRC
+
+** OrgRoam Consult Support
+
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (use-package consult-org-roam
+     :ensure t
+     :after org-roam
+     :init
+     (require 'consult-org-roam)
+     ;; Activate the minor mode
+     (consult-org-roam-mode 1)
+     :custom
+     ;; Use `ripgrep' for searching with `consult-org-roam-search'
+     (consult-org-roam-grep-func #'consult-ripgrep)
+     ;; Configure a custom narrow key for `consult-buffer'
+     (consult-org-roam-buffer-narrow-key ?r)
+     ;; Display org-roam buffers right after non-org-roam buffers
+     ;; in consult-buffer (and not down at the bottom)
+     (consult-org-roam-buffer-after-buffers t)
+     :config
+     ;; Eventually suppress previewing for certain functions
+     (consult-customize
+      consult-org-roam-forward-links
+      :preview-key (kbd "M-."))
+     :bind
+     ;; Define some convenient keybindings as an addition
+     (("C-c n e" . consult-org-roam-file-find) ;; only looks at top level nodes
+      ("C-c n B" . consult-org-roam-backlinks)
+      ("C-c n F" . consult-org-roam-forward-links)
+      ("C-c n r" . consult-org-roam-search)))
+#+END_SRC
+
+** OrgRoam Pandoc support
+This includes the template used for exports.  We usually want to use this pandoc export, not the export to ODT or docx, so that we get the customizations for Google Docs.  The code in ~org-roam-export~ is supposed to provide support for org-roam links, but unfortuantely it only works for exporting to HTML.
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (when (executable-find "pandoc")
+    (use-package ox-pandoc
+      :after org
+      :init
+      (require 'org-roam-export)
+      (setq org-pandoc-menu-entry
+            '((36 "as html5." org-pandoc-export-as-html5)
+              (74 "as json." org-pandoc-export-as-json)
+              (109 "to man and open." org-pandoc-export-to-man-and-open)
+              (79 "to odt." org-pandoc-export-to-odt)
+              (80 "to pptx." org-pandoc-export-to-pptx)
+              (88 "to docx." org-pandoc-export-to-docx))
+            org-pandoc-options-for-docx
+            '((reference-doc . "~/Notes/export/pandoc/GenericDocTemplate.docx")
+    ;;      Since we don't have lua on MacOS
+    ;;          (lua-filter . "~/Notes/export/pandoc/GenericDocFilter.lua")
+    ;;      For when ox-pandoc is updated.
+    ;;          (syntax-highlighting . "~/Notes/export/pandoc/Kodify.theme")
+    ;;          (highlight-style . "~/Notes/export/pandoc/pygments.theme")
+              ))
+      ))
+#+END_SRC
+
+A utility function that converts a buffer with Markdown text into org mode text using pandoc.  Can be used to import Google Docs into Orgmode. There are a bunch of possible improvements here. First, if the file name includes spaces or other strange characters, they need to be convered to filename style characters before ~pandoc~ can work properly.  Second, this just creates an org file, ideally it would either open it, or replace the current buffer with the org-mode content. 
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (defun convert-buffer-markdown-to-org ()
+    "Convert the current buffer's content from markdown to orgmode
+     format and save it with the current buffer's file name but with
+     .org extension."
+    (interactive)
+    (shell-command-on-region (point-min) (point-max)
+                             (format "pandoc -f markdown -t org -o --wrap=none %s"
+                                     (concat (file-name-sans-extension (buffer-file-name)) ".org"))))
+#+END_SRC
+
+* Org Agenda
+
+This code came from [[https://www.d12frosted.io/posts/2021-01-16-task-management-with-roam-vol5][Task management with org-roam Vol. 5: Dynamic and fast agenda - Boris Buliga]]. This code maintains a database of which files have agenda relevant items in them 
+
+#+BEGIN_SRC emacs-lisp :tangle yes
+;; From https://gist.github.com/d12frosted/a60e8ccb9aceba031af243dff0d19b2e
+
+
+(defun vulpea-project-p ()
+  "Return non-nil if current buffer has any todo entry.
+TODO entries marked as done are ignored, meaning the this
+function returns nil if current buffer contains only completed
+tasks."
+  (seq-find                                 ; (3)
+   (lambda (type)
+     (eq type 'todo))
+   (org-element-map                         ; (2)
+       (org-element-parse-buffer 'headline) ; (1)
+       'headline
+     (lambda (h)
+       (org-element-property :todo-type h)))))
+
+(defun vulpea-project-update-tag ()
+    "Update PROJECT tag in the current buffer."
+    (when (and (not (active-minibuffer-window))
+               (vulpea-buffer-p))
+      (save-excursion
+        (goto-char (point-min))
+        (let* ((tags (vulpea-buffer-tags-get))
+               (original-tags tags))
+          (if (vulpea-project-p)
+              (setq tags (cons "project" tags))
+            (setq tags (remove "project" tags)))
+
+          ;; cleanup duplicates
+          (setq tags (seq-uniq tags))
+
+          ;; update tags if changed
+          (when (or (seq-difference tags original-tags)
+                    (seq-difference original-tags tags))
+            (apply #'vulpea-buffer-tags-set tags))))))
+
+(defun vulpea-buffer-p ()
+  "Return non-nil if the currently visited buffer is a note."
+  (and buffer-file-name
+       (eq major-mode 'org-mode)
+       (string-suffix-p "org" buffer-file-name)
+       (string-prefix-p
+        (expand-file-name (file-name-as-directory org-roam-directory))
+        (file-name-directory buffer-file-name))))
+
+(defun vulpea-project-files ()
+    "Return a list of note files containing 'project' tag." ;
+    (seq-uniq
+     (seq-map
+      #'car
+      (org-roam-db-query
+       [:select [nodes:file]
+        :from tags
+        :left-join nodes
+        :on (= tags:node-id nodes:id)
+        :where (like tag (quote "%\"project\"%"))]))))
+
+(defun vulpea-agenda-files-update (&rest _)
+  "Update the value of `org-agenda-files'."
+  (setq org-agenda-files (vulpea-project-files)))
+
+(add-hook 'find-file-hook #'vulpea-project-update-tag)
+(add-hook 'before-save-hook #'vulpea-project-update-tag)
+
+(advice-add 'org-agenda :before #'vulpea-agenda-files-update)
+(advice-add 'org-todo-list :before #'vulpea-agenda-files-update)
+(add-to-list 'org-tags-exclude-from-inheritance "project")
+#+END_SRC
+
+Library of functions from the original author.
+
+#+BEGIN_SRC emacs-lisp :tangle yes
+;; functions borrowed from `vulpea' library
+;; https://github.com/d12frosted/vulpea/blob/6a735c34f1f64e1f70da77989e9ce8da7864e5ff/vulpea-buffer.el
+
+(defun vulpea-buffer-tags-get ()
+  "Return filetags value in current buffer."
+  (vulpea-buffer-prop-get-list "filetags" "[ :]"))
+
+(defun vulpea-buffer-tags-set (&rest tags)
+  "Set TAGS in current buffer.
+If filetags value is already set, replace it."
+  (if tags
+      (vulpea-buffer-prop-set
+       "filetags" (concat ":" (string-join tags ":") ":"))
+    (vulpea-buffer-prop-remove "filetags")))
+
+(defun vulpea-buffer-tags-add (tag)
+  "Add a TAG to filetags in current buffer."
+  (let* ((tags (vulpea-buffer-tags-get))
+         (tags (append tags (list tag))))
+    (apply #'vulpea-buffer-tags-set tags)))
+
+(defun vulpea-buffer-tags-remove (tag)
+  "Remove a TAG from filetags in current buffer."
+  (let* ((tags (vulpea-buffer-tags-get))
+         (tags (delete tag tags)))
+    (apply #'vulpea-buffer-tags-set tags)))
+
+(defun vulpea-buffer-prop-set (name value)
+  "Set a file property called NAME to VALUE in buffer file.
+If the property is already set, replace its value."
+  (setq name (downcase name))
+  (org-with-point-at 1
+    (let ((case-fold-search t))
+      (if (re-search-forward (concat "^#\\+" name ":\\(.*\\)")
+                             (point-max) t)
+          (replace-match (concat "#+" name ": " value) 'fixedcase)
+        (while (and (not (eobp))
+                    (looking-at "^[#:]"))
+          (if (save-excursion (end-of-line) (eobp))
+              (progn
+                (end-of-line)
+                (insert "\n"))
+            (forward-line)
+            (beginning-of-line)))
+        (insert "#+" name ": " value "\n")))))
+
+(defun vulpea-buffer-prop-set-list (name values &optional separators)
+  "Set a file property called NAME to VALUES in current buffer.
+VALUES are quoted and combined into single string using
+`combine-and-quote-strings'.
+If SEPARATORS is non-nil, it should be a regular expression
+matching text that separates, but is not part of, the substrings.
+If nil it defaults to `split-string-default-separators', normally
+\"[ \f\t\n\r\v]+\", and OMIT-NULLS is forced to t.
+If the property is already set, replace its value."
+  (vulpea-buffer-prop-set
+   name (combine-and-quote-strings values separators)))
+
+(defun vulpea-buffer-prop-get (name)
+  "Get a buffer property called NAME as a string."
+  (org-with-point-at 1
+    (when (re-search-forward (concat "^#\\+" name ": \\(.*\\)")
+                             (point-max) t)
+      (buffer-substring-no-properties
+       (match-beginning 1)
+       (match-end 1)))))
+
+(defun vulpea-buffer-prop-get-list (name &optional separators)
+  "Get a buffer property NAME as a list using SEPARATORS.
+If SEPARATORS is non-nil, it should be a regular expression
+matching text that separates, but is not part of, the substrings.
+If nil it defaults to `split-string-default-separators', normally
+\"[ \f\t\n\r\v]+\", and OMIT-NULLS is forced to t."
+  (let ((value (vulpea-buffer-prop-get name)))
+    (when (and value (not (string-empty-p value)))
+      (split-string-and-unquote value separators))))
+
+(defun vulpea-buffer-prop-remove (name)
+  "Remove a buffer property called NAME."
+  (org-with-point-at 1
+    (when (re-search-forward (concat "\\(^#\\+" name ":.*\n?\\)")
+                             (point-max) t)
+      (replace-match ""))))
+#+END_SRC
+
+The following code can be run to refresh the data about files that include agenda items. 
+
+#+BEGIN_SRC emacs-lisp :tangle no
+  (dolist (file (org-roam-list-files))
+    (message "processing %s" file)
+    (with-current-buffer (or (find-buffer-visiting file)
+			     (find-file-noselect file))
+      (vulpea-project-update-tag)
+      (save-buffer)))
+ #+END_SRC
+
+* Org Publisher
+
+#+begin_src emacs-lisp :tangle yes
+  (require 'ox-publish)
+  (setq org-publish-project-alist
+   '(
+     ("notes-org" ; Component name for Org files
+      :base-directory "~/Notes/"
+      :base-extension "org"
+      :publishing-directory "~/public_html/"
+      :auto-sitemap t
+      :recursive t
+      :with-title t
+      :with-toc nil
+      :html-html5-fancy t
+      :with-latec t
+      :section-numbers nil
+      :publishing-function org-html-publish-to-html
+      :html-extension "html"
+      )
+     ("notes-static" ; Component name for static files (CSS, images)
+      :base-directory "~/Notes/css/"
+      :publishing-directory "~/public_html/css/"
+      :recursive t
+      :publishing-function org-publish-copy-tree
+      )
+     ("notes-site" :components ("notes-org" "notes-static")) ; Combined project
+     ))
+
+  (setq org-html-validation-link nil            ;; Don't show validation link
+        org-html-head-include-scripts nil       ;; Use our own scripts
+        org-html-head-include-default-style nil ;; Use our own styles
+        org-html-head "<link rel=\"stylesheet\" type=\"text/css\" href=\"https://cdn.simplecss.org/simple.min.css\" />")
+#+end_src
+* Python Mode
+I mostly run python programs inside org mode, so much of this commented out. 
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (setq python-shell-interpreter "python3")
+
+(add-hook 'python-mode-hook
+	  #'(lambda () 
+	     (setq python-indent 2)))
+#+END_SRC
+
+Run/highlight code using babel in org-mode. This is old code and is disabled. 
+#+BEGIN_SRC emacs-lisp :tangle no
+
+  (autoload 'python-mode "python-mode" "Python editing mode." t)
+  (add-to-list 'auto-mode-alist '("\\.py$" . python-mode))
+
+  (setq interpreter-mode-alist
+        (cons '("python" . python-mode)
+               interpreter-mode-alist))
+
+  (setq python-mode-hook #'(lambda () (font-lock-mode 1)))
+#+END_SRC
+
+* Customization
+#+begin_src emacs-lisp :tangle yes
+(setq custom-file "~/.emacs.d/emacs-custom.el")
+(load custom-file)
+#+END_SRC

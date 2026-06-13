@@ -1,11 +1,15 @@
 # Compiled
 *.elc
+config.el
+org-roam.db
 
 # Packaging
 .cask/
 .eask/
 .eldev/
 .keg/
+elpa/
+eln-cache/
 
 # Built distribution
 dist/
