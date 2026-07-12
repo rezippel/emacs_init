@@ -802,6 +802,7 @@ This is used to make columns in tables work well.
     (setq org-src-fontify-natively t)
     ;; Don't prompt before running code in org
     (setq org-confirm-babel-evaluate nil)
+    (setq org-cite-global-bibliograph '("~/revised_papers/latex-libraries/paperpile.bib"))
 
     ;; org-mode bindings
     :bind (("C-c a" . org-agenda)
@@ -930,15 +931,15 @@ The following table is the capture templates used. This is pulled out into a sin
     	 :unnarrowed t)
     	("m" "Math" plain "%?"
     	 :target (file+head "pages/${slug}.org"
-    			    "#+title: ${title}\n#+date: %U\n#+filetags: :math:\n\n")
+    			    "#+title: ${title}\n#+date: %U\n#+PREVIEW: latexpreview\n#+filetags: :math:\n\n")
     	 :unnarrowed t)
     	("p" "Physics" plain "%?"
     	 :target (file+head "pages/${slug}.org"
-    			    "#+title: ${title}\n#+date: %U\n#+filetags: :physics:\n\n")
+    			    "#+title: ${title}\n#+date: %U\n#+PREVIEW: nolatexpreview\n#+filetags: :physics:\n\n")
     	 :unnarrowed t)
     	("t" "Technology" plain "%?"
     	 :target (file+head "pages/${slug}.org"
-    			    "#+title: ${title}\n#+date: %U\n#+filetags: :technology:\n\n")
+    			    "#+title: ${title}\n#+date: %U\n#+PREVIEW: nolatexpreview\n#+filetags: :technology:\n\n")
     	 :unnarrowed t)
     	("d" "default" plain "%?"
     	 :target (file+head "pages/${slug}.org"
