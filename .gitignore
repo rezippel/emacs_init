@@ -2,6 +2,12 @@
 *.elc
 config.el
 org-roam.db
+bookmarks
+history
+recentf
+places
+projects
+tramp
 
 # Packaging
 .cask/
@@ -10,6 +16,7 @@ org-roam.db
 .keg/
 elpa/
 eln-cache/
+transient/
 
 # Built distribution
 dist/

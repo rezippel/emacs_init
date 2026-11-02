@@ -116,18 +116,6 @@ current host environment.
 
   (when (and shell-file-name (string-match-p "bash" shell-file-name))
     (add-to-list 'os-environment 'bash))
-
-  (when (or (string-match-p "google" (system-name))
-            ;; The following was a Bruschetta system name
-            (string-match-p "zippel83" (system-name)))
-    (add-to-list 'os-environment 'google))
-#+END_SRC
-
-If running on a Google machine, load the standard internal ~google~ Elisp library (using ~'noerror~ so
-startup still succeeds if the site-lisp package is unavailable).
-#+BEGIN_SRC emacs-lisp :tangle no
-  (when (memq 'google os-environment)
-    (require 'google nil 'noerror))
 #+END_SRC
 
 Load environment variables from the desktop environment..  Don't forget to add any additional needed environment variables when they are introduced.
@@ -1121,22 +1109,22 @@ initial ~#+filetags:~ header:
 Every newly captured note starts with ~#+title:~, an inactive creation timestamp (~#+date: %U~), and
 ~:unnarrowed t~ so the full file is immediately visible.
 #+BEGIN_SRC emacs-lisp :tangle yes
-  (setq zippel-roam-capture-templates
+  (setq rz-roam-capture-templates
         '(("i" "Individual" plain "%?"
            :target (file+head "people/${slug}.org"
-                              "#+TITLE: ${title}\n#+date: %U\n#+FILETAGS: :person:\n\n")
+                              "#+TITLE: ${title}\n#+DATE: %U\n#+FILETAGS: :person:\n\n")
            :unnarrowed t)
   	("m" "Mathematics" plain "%?"
            :target (file+head "pages/${slug}.org"
-                              "#+TITLE: ${title}\n#+date: %U\n#+FILETAGS: :math:\n\n")
+                              "#+TITLE: ${title}\n#+DATE: %U\n#+FILETAGS: :math:\n\n")
            :unnarrowed t)
   	 ("p" "Physics" plain "%?"
            :target (file+head "pages/${slug}.org"
-                              "#+TITLE: ${title}\n#+date: %U\n#+FILETAGS: :physics:\n\n")
+                              "#+TITLE: ${title}\n#+DATE: %U\n#+FILETAGS: :physics:\n\n")
            :unnarrowed t)
           ("d" "default" plain "%?"
            :target (file+head "pages/${slug}.org"
-                              "#+TITLE: ${title}\n#+date: %U\n#+FILETAGS: \n\n")
+                              "#+TITLE: ${title}\n#+DATE: %U\n#+FILETAGS: \n\n")
            :unnarrowed t)))
 #+END_SRC
 
@@ -1184,7 +1172,7 @@ Configure ~org-roam~ and ~org-roam-dailies~:
     (require 'org-roam-dailies)
     (org-roam-db-autosync-mode)
     (setq org-roam-extract-new-file-path "${slug}.org"
-          org-roam-capture-templates zippel-roam-capture-templates)
+          org-roam-capture-templates rz-roam-capture-templates)
 
     (setq org-roam-node-display-template
           (concat "${hierarchy:60} ${backlinkscount:6} "
