@@ -5,17 +5,18 @@
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(package-selected-packages
-   '(auctex-latexmk auto-dictionary cape consult-org-roam corfu
+   '(auctex-latexmk auto-dictionary borg cape consult-org-roam corfu
 		    editorconfig eglot embark-consult erc
 		    exec-path-from-shell f faceup gptel idlwave
 		    leuven-theme lv magit marginalia markdown-mode
-		    ob-http orderless org-modern org-superstar
+		    ob-http orderless org org-modern org-superstar
 		    org-web-tools ox-pandoc peg python track-changes
 		    tramp valign verilog-mode vertico which-key
 		    window-tool-bar))
  '(package-vc-selected-packages
-   '((lean4-mode :url
-		 "https://github.com/leanprover-community/lean4-mode"))))
+   '((org :url "https://git.savannah.gnu.org/git/emacs/org-mode.git"
+	  :lisp-dir "lisp" :make '("autoloads" "info") :doc
+	  "doc/org.texi"))))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.

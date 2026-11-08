@@ -1,5 +1,7 @@
 # Compiled
 *.elc
+.org-id-locations
+.vorg.db
 config.el
 org-roam.db
 bookmarks
@@ -26,3 +28,7 @@ dist/
 
 # Undo-tree save-files
 *.~undo-tree
+
+# straight.el (keep lockfiles in straight/versions/)
+straight/*
+!straight/versions/

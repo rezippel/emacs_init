@@ -6,10 +6,9 @@ The "literate" version of my init file.
 
 Startup flows through three files in =~/.emacs.d/=:
 1. =~/.emacs.d/early-init.el=: Runs before the GUI frame or package manager initializes. It
-   temporarily raises ~gc-cons-threshold~ so garbage collection does not slow down startup, disables
-   ~package-enable-at-startup~, and suppresses the graphical toolbar before the initial frame is
-   drawn.
-2. =~/.emacs.d/init.el=: Checks whether ~config.org~ is newer than ~config.el~. It only tangles ~config.org~
+   disables ~package-enable-at-startup~ so ~package.el~ does not activate packages; straight.el
+   manages packages instead.
+2. =~/.emacs.d/init.el=: Bootstraps straight.el and installs ~org~ through it, then checks whether ~config.org~ is newer than ~config.el~. It only tangles ~config.org~
    when needed, and otherwise loads the compiled ~config.el~ directly for fast startup.
 3. =~/.emacs.d/config.org~ (this file): Contains all configuration organized by topic. Only blocks
    marked ~:tangle yes~ (the default via ~#+PROPERTY: header-args:emacs-lisp :tangle yes~) are written
@@ -30,7 +29,7 @@ First, some small helper functions used across the configuration:
 
 #+BEGIN_SRC emacs-lisp :tangle yes
   (defun add-load-path (new-path)
-    (add-to-list 'load-path (expand-file-name new-path)
+    (add-to-list 'load-pathq (expand-file-name new-path)
                  t))
 
   (defun capitalize-words (title)
@@ -48,47 +47,39 @@ stepping through Elisp functions with the built-in Edebug debugger is a single k
   ;; (setq warning-minimum-level :error)
 #+END_SRC
 
-** Initialize the use-package mechanism
-Configure ~package.el~ and ~use-package~ (which is built into Emacs 29+):
-- Adds MELPA alongside the default GNU and NonGNU ELPA repositories.
+** Initialize the straight.el package manager
+Packages are installed and managed by [[https://github.com/radian-software/straight.el][straight.el]] rather than ~package.el~. Straight clones
+each package's Git repository into =~/.emacs.d/straight/repos/= and builds it into
+=~/.emacs.d/straight/build/=, which makes package versions reproducible (via lockfiles) and lets
+us edit package sources directly.
+
+Because ~init.el~ needs Org to tangle this file, straight itself is bootstrapped in ~init.el~ (before
+~ob-tangle~ is loaded), along with ~org~ so that only the straight-managed Org is ever loaded.
+~early-init.el~ sets ~package-enable-at-startup~ to ~nil~ so ~package.el~ never activates the old
+=elpa/= packages.
+
+This block configures the remaining pieces:
 - Prefers newer ~.el~ source files over stale byte-compiled ~.elc~ files (~load-prefer-newer~).
-- Advises ~package-install~ (~rz/refresh-on-error~) so that if installing a newly added package fails
-  due to a stale local MELPA archive cache (for example, after pulling ~config.org~ on another
-  machine), Emacs automatically runs ~package-refresh-contents~ once and retries.
-- Sets ~use-package-always-ensure t~ so declared packages are installed automatically unless ~:ensure
-  nil~ is specified (for built-in packages like ~org~, ~flyspell~, or ~reftex~).
+- Installs ~use-package~ via straight (it is built into Emacs 29+, so this just registers it) and
+  sets ~straight-use-package-by-default t~ so every ~use-package~ form installs its package through
+  straight. Built-in packages (~flyspell~, ~reftex~, ...) opt out with ~:straight (:type built-in)~.
+- Run ~M-x straight-pull-all~ to update packages, ~M-x straight-freeze-versions~ to write a lockfile
+  (=straight/versions/default.el=), and ~M-x straight-thaw-versions~ to restore those versions on
+  another machine.
 #+BEGIN_SRC emacs-lisp :tangle yes
-  (require 'package)
-  (setq package-enable-at-startup nil)
   (setq load-prefer-newer t)
 
-  ;; GNU and NonGNU ELPA are enabled by default in Emacs 28+.
-  ;; Add MELPA for additional community packages:
-  (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
+  ;; `straight' itself is bootstrapped in init.el; make sure it is loaded.
+  (unless (featurep 'straight)
+    (error "straight.el was not bootstrapped; check init.el"))
 
-  (package-initialize)
-
-  ;; Automatically refresh package archives once if installing a new package fails
-  ;; due to a stale local MELPA index (e.g., after pulling config.org on another machine).
-  (defvar rz/package-contents-refreshed nil)
-  (define-advice package-install (:around (orig-fn pkg &rest args) rz/refresh-on-error)
-    (condition-case err
-        (apply orig-fn pkg args)
-      (error
-       (if rz/package-contents-refreshed
-           (signal (car err) (cdr err))
-         (setq rz/package-contents-refreshed t)
-         (package-refresh-contents)
-         (apply orig-fn pkg args)))))
-
-  ;; `use-package' is built into Emacs 29+; install only on older Emacs.
-  (unless (package-installed-p 'use-package)
-    (package-refresh-contents)
-    (package-install 'use-package))
-
+  ;; Install use-package through straight and make straight the default backend
+  ;; for every `use-package' declaration.
+  (straight-use-package 'use-package)
   (require 'use-package)
-  (setq use-package-verbose t
-        use-package-always-ensure t)
+  (setq straight-use-package-by-default t
+        use-package-verbose t
+        use-package-always-ensure nil)
 #+END_SRC
 
 Load ~f.el~, a modern file and directory path manipulation library used later by our custom ~org-roam~
@@ -118,11 +109,10 @@ current host environment.
     (add-to-list 'os-environment 'bash))
 #+END_SRC
 
-Load environment variables from the desktop environment..  Don't forget to add any additional needed environment variables when they are introduced.
+Load environment variables from the desktop environment..  Don't forget to add any additional needed environment variables when they are introduced.cnf
 
 #+begin_src emacs-lisp :tangle yes
   (use-package exec-path-from-shell
-    :ensure t
     :if (memq window-system '(mac ns pgtk x))
     :config
     ;; Ensure your shell is treated as an interactive or login shell
@@ -143,7 +133,7 @@ calls after prompting to save modified buffers.
   ;; (setq confirm-kill-emacs #'yes-or-no-p)
 #+END_SRC
 
-Store backup (~file~~) and auto-save (~#file#~) files inside ~/.emacs.d/backups/~ and
+Store backup (~file~) and auto-save (~#file#~) files inside ~/.emacs.d/backups/~ and
 ~/.emacs.d/auto-save/~ rather than ~/tmp~ or cluttering working directories. Using ~version-control t~
 with ~kept-new-versions 6~ and ~delete-old-versions t~ keeps the 6 most recent numbered backups of each
 file and prunes older ones automatically without needing a startup cleanup loop.
@@ -264,7 +254,6 @@ variants:
 #+BEGIN_SRC emacs-lisp :tangle no
   (use-package spacemacs-theme
     :defer t
-    :ensure t
     :init
     (setq spacemacs-theme-org-bold nil
           spacemacs-theme-org-height t
@@ -491,7 +480,7 @@ system):
 #+BEGIN_SRC emacs-lisp :tangle yes
   (when (executable-find "hunspell")
     (use-package flyspell
-      :ensure nil
+      :straight (:type built-in)
       :init
       (setq ispell-dictionary "en_US"
             ispell-program-name (executable-find "hunspell")
@@ -521,7 +510,6 @@ than replacing them.
 **Vertico** renders minibuffer completion candidates in a clean vertical list.
 #+BEGIN_SRC emacs-lisp :tangle yes
   (use-package vertico
-    :ensure t
     :custom (vertico-cycle nil)
     :init (vertico-mode)
     )
@@ -534,7 +522,6 @@ than replacing them.
 #+BEGIN_SRC emacs-lisp :tangle yes
   (use-package marginalia
     :after vertico
-    :ensure t
     :custom
     (marginalia-annotators '(marginalia-annotators-heavy marginalia-annotators-light nil))
     ;; Either bind `marginalia-cycle' globally or only in the minibuffer
@@ -549,7 +536,6 @@ than replacing them.
  ~~/N/p/p~ expands naturally to ~~/Notes/policy/policy_db.org~.
 #+BEGIN_SRC emacs-lisp :tangle yes
   (use-package orderless
-    :ensure t
     :custom
     (completion-styles '(orderless basic))
     (completion-category-overrides
@@ -677,7 +663,6 @@ than replacing them.
   (~cape-dabbrev~) and file path completion (~cape-file~).
 #+BEGIN_SRC emacs-lisp :tangle yes
   (use-package corfu
-    :ensure t
     :custom
     (corfu-auto t)
     (corfu-auto-delay 0.2)
@@ -687,7 +672,6 @@ than replacing them.
     (global-corfu-mode 1))
 
   (use-package cape
-    :ensure t
     :init
     (add-hook 'completion-at-point-functions #'cape-dabbrev)
     (add-hook 'completion-at-point-functions #'cape-file))
@@ -701,7 +685,6 @@ than replacing them.
 - ~C-h B~ (~embark-bindings~): Searches all active keybindings in the current buffer.
 #+BEGIN_SRC emacs-lisp :tangle yes
   (use-package embark
-    :ensure t
     :bind (("C-." . embark-act)
            ("C-;" . embark-dwim)
            ("C-h B" . embark-bindings))
@@ -709,7 +692,6 @@ than replacing them.
     (setq prefix-help-command #'embark-prefix-help-command))
 
   (use-package embark-consult
-    :ensure t
     :after (embark consult)
     :hook (embark-collect-mode . consult-preview-at-point-mode))
 #+END_SRC
@@ -721,7 +703,6 @@ PDF viewer integration via ~pdf-tools~ (currently disabled via ~:tangle no~):
   (when (not (memq 'macos os-environment))
     ;; pdf-tools doesn't exist on mac-os
     (use-package pdf-tools
-      :ensure t
       :config
       (pdf-tools-install)
       (setq-default pdf-view-display-size 'fit-page)
@@ -748,19 +729,17 @@ detection (~auto-dictionary~):
 
   (when (executable-find "latex")
     (use-package auctex-latexmk
-      :ensure t
       :config
       (auctex-latexmk-setup)
       (setq auctex-latexmk-inherit-TeX-PDF-mode t))
 
     (use-package reftex
-      :ensure nil
+      :straight (:type built-in)
       :config
       (setq reftex-cite-prompt-optional-args t)) ;; Prompt for empty optional arguments in cite
 
     (when (executable-find "hunspell")
       (use-package auto-dictionary
-        :ensure t
         :hook (flyspell-mode . auto-dictionary-mode)
         :bind (("<mouse-3>" . flyspell-correct-word)))))
 #+END_SRC
@@ -771,7 +750,7 @@ compilation, and ~reftex~ / ~flyspell~ activation in LaTeX buffers.
 #+BEGIN_SRC emacs-lisp :tangle yes
   (when (executable-find "latex")
     (use-package tex
-      :ensure auctex
+      :straight auctex
       :mode ("\\.tex\\'" . LaTeX-mode)
       :config
       (setq TeX-source-correlate-mode t
@@ -804,10 +783,10 @@ Support for exporting Org buffers to Markdown via ~ox-md~ and ~ox-mfg~ (GitHub F
 Markdown). Disabled (~:tangle no~) in favor of Pandoc-based exports.
 #+BEGIN_SRC emacs-lisp :tangle no
   (use-package ox-md
+    :straight (:type built-in)
     :config
     (setq org-md-headline-style 'atx)
-    (use-package ox-mfg
-      :ensure t))
+    (use-package ox-mfg))
 #+END_SRC
 
 Control whether Org buffers use proportional (~variable-pitch~) fonts or monospace (~fixed-pitch~) fonts
@@ -871,71 +850,74 @@ always inherit from ~fixed-pitch~ (monospace) so columns and source blocks align
 #+END_SRC
 
 Define ~rz/org-mode-setup~, which runs via ~org-mode-hook~ in every Org buffer to:
-- Set ~fill-column~ to 100, enable UTF-8 entity rendering (~org-pretty-entities~), and scale inline
+- Set ~fill-column~ to 100, disable UTF-8 entity rendering (~org-pretty-entities~ since ~org-latex-preview~ does a better jobm, and scale inline
   LaTeX previews to ~1.4x~.
 - Apply ~rz/customize-org-faces~ and enable ~flyspell-mode~ when ~hunspell~ is available.
 - Choose between ~variable-pitch-mode~ + ~visual-line-mode~ + ~valign-mode~ (when
   ~org-variable-spaced-fonts~ is non-nil) or hard line wrapping via ~auto-fill-mode~ (when
   ~org-variable-spaced-fonts~ is ~nil~).
 - Prevent accidental edits inside folded regions (~org-fold-catch-invisible-edits~).
+  
 #+BEGIN_SRC emacs-lisp :tangle yes
-  (defun rz/org-mode-setup ()
-    "Configure local settings whenever an `org-mode' buffer is opened."
-    (setq fill-column 90
-          org-pretty-entities t
-          org-adapt-indentation nil
-          org-support-shift-select t)
+   (defun rz/org-mode-setup ()
+     "Configure local settings whenever an `org-mode' buffer is opened."
+     (setq fill-column 90
+           org-pretty-entities nil
+           org-adapt-indentation nil
+           org-support-shift-select t)
 
-    (rz/customize-org-faces)
+     (rz/customize-org-faces)
 
-    ;; Setup Latex formulapreviews
-    ;; 1. Set dvisvgm as the global default processor
-    (setq org-preview-latex-default-process 'dvisvgm)
+     ;; Setup Latex formulapreviews
+     ;; 1. Set dvisvgm as the global default processor  (some of the following won't work until
+     ;; Org-mode 10.0
+     (setq org-preview-latex-default-process 'dvisvgm)
+     (setq org-preview-latex-preview-number t) 
 
-    ;; 2. Optimize dvisvgm parameters for crisp vectors and precise clipping
-    ;; (--bbox=exact ensures tighter margins; --no-fonts converts glyphs to clean paths)
-    (let ((dvisvgm-recipe (assq 'dvisvgm org-preview-latex-process-alist)))
-      (when dvisvgm-recipe
-        (plist-put (cdr dvisvgm-recipe) :image-converter
-                ;; '("dvisvgm --page=1- --clipjoin --bbox=exact --no-fonts -o %b.svg %f")
-                   '("dvisvgm --page=1- --clipjoin --bbox=preview --scale=1.25 --relative --no-fonts -o %O %f")
-  		 )))
+     ;; 2. Optimize dvisvgm parameters for crisp vectors and precise clipping
+     ;; (--bbox=exact ensures tighter margins; --no-fonts converts glyphs to clean paths)
+     (let ((dvisvgm-recipe (assq 'dvisvgm org-preview-latex-process-alist)))
+       (when dvisvgm-recipe
+         (plist-put (cdr dvisvgm-recipe) :image-converter
+                 '("dvisvgm --page=1- --clipjoin --bbox=exact --no-fonts -o %O %f")
+  		;;   '("dvisvgm --page=1- --clipjoin --bbox=preview --scale=1.25 --relative --no-fonts -o %O %f")
+   		 )))
 
-    ;; 3. Set a balanced initial scale for vector rendering (this is done above)
-    (setq org-format-latex-options
-          '(:foreground default :background default :scale 1.4
-                        :html-foreground "Black"
-                        :html-background "Transparent"
-                        :html-scale 1.4
-                        :matchers ("begin" "$1" "$" "$$" "\\(" "\\[")))
+     ;; 3. Set a balanced initial scale for vector rendering (this is done above)
+     (setq org-format-latex-options
+           '(:foreground default :background default :scale 1.4
+                         :html-foreground "Black"
+                         :html-background "Transparent"
+                         :html-scale 1.4
+                         :matchers ("begin" "$1" "$" "$$" "\\(" "\\[")))
 
-    (when (executable-find "hunspell")
-      (flyspell-mode 1))
+     (when (executable-find "hunspell")
+       (flyspell-mode 1))
 
-    (cond (org-variable-spaced-fonts
-           (variable-pitch-mode 1)
-           (visual-line-mode 1)
-           (when (fboundp 'valign-mode)
-             (valign-mode 1)))
-          (t
-           (auto-fill-mode 1)))
+     (cond (org-variable-spaced-fonts
+            (variable-pitch-mode 1)
+            (visual-line-mode 1)
+            (when (fboundp 'valign-mode)
+              (valign-mode 1)))
+           (t
+            (auto-fill-mode 1)))
 
-    (setq org-fold-catch-invisible-edits 'show
-          org-link-descriptive t))
+     (setq org-fold-catch-invisible-edits 'show
+           org-link-descriptive t))
 
-  (defun rz/org-latex-preview-adjust-ascent (ov)
-    "Shift the baseline of inline LaTeX preview overlays upward."
-    (when-let* ((display (overlay-get ov 'display))
-                ((eq (car-safe display) 'image)))
-      ;; Only adjust inline equations (no newlines inside the source snippet)
-      (let ((text (buffer-substring-no-properties (overlay-start ov) (overlay-end ov))))
-        (unless (string-match-p "\n" text)
-          ;; :ascent represents percentage of image height above the baseline.
-          ;; Lowering this value (e.g., from 100 to 80) pulls the image UP.
-          (plist-put (cdr display) :ascent 'center)))))
+   (defun rz/org-latex-preview-adjust-ascent (ov)
+     "Shift the baseline of inline LaTeX preview overlays upward."
+     (when-let* ((display (overlay-get ov 'display))
+                 ((eq (car-safe display) 'image)))
+       ;; Only adjust inline equations (no newlines inside the source snippet)
+       (let ((text (buffer-substring-no-properties (overlay-start ov) (overlay-end ov))))
+         (unless (string-match-p "\n" text)
+           ;; :ascent represents percentage of image height above the baseline.
+           ;; Lowering this value (e.g., from 100 to 80) pulls the image UP.
+           (plist-put (cdr display) :ascent 'center)))))
 
-  (with-eval-after-load 'org
-    (advice-add 'org--format-latex-make-overlay :after #'rz/org-latex-preview-adjust-ascent))
+   (with-eval-after-load 'org
+     (advice-add 'org--format-latex-make-overlay :after #'rz/org-latex-preview-adjust-ascent))
 #+END_SRC
 
 Load ~valign~ for pixel-level visual alignment of Org tables when using variable-pitch fonts or CJK
@@ -948,85 +930,126 @@ blocks.
   (use-package ob-http)
 #+END_SRC
 
-Configure the built-in ~org~ package (~:ensure nil~):
-- The ~org-directory~ is set to ~~/Notes. Populate ~org-agenda-files~ across the main note subdirectories.
-- Hide leading stars, emphasis markers, and block bodies on startup while opening headings unfolded
-  (~showeverything~), and require braces (~{}~) for subscripts/superscripts so bare underscores in
-  identifiers are not turned into subscripts.
-- Enable Org Babel execution (~org-babel-do-load-languages~) for Graphviz ~dot~, ~emacs-lisp~, ~python~
-  (~python3~), ~shell~, ~calc~, ~js~, ~sqlite~, ~http~, and ~R~ without confirmation prompts.
-- Bind global keys for ~org-agenda~ (~C-c a~) and ~org-switchb~ (~C-c b~), plus ~<prior>~ / ~<next>~
-  (PageUp/PageDown) for moving subtrees up and down.
-- Configure two-level refile targets across ~org-agenda-files~ and define custom task sequences (~TODO~
-  $\rightarrow$ ~WORKING~ $\rightarrow$ ~CANCELLED~ / ~GOOGLE~ / ~DONE~, and ~REVIEW~ $\rightarrow$ ~DONE~) with timestamp/note logging and
-  color-coded keyword faces.
+Include the prototype verison latex-preview
+
 #+BEGIN_SRC emacs-lisp :tangle yes
-  (use-package org
-    :ensure nil
-    :hook (org-mode . rz/org-mode-setup)
-    :init
-    (setq org-default-notes-file "refile.org")
-    (setq org-directory "~/Notes")
-    (setq org-agenda-files
-          (list (expand-file-name org-directory)
-                (expand-file-name "pages/" org-directory)))
-    (setq org-startup-indented nil
-          org-hide-leading-stars t
-          org-hide-emphasis-markers t
-          ;; Hide #+BEGIN and similar blocks
-          org-hide-block-startup t
-          org-startup-folded 'showeverything
-          org-use-sub-superscripts "{}")
-    (org-babel-do-load-languages
-     'org-babel-load-languages
-     '((dot . t)
-       (emacs-lisp . t)
-       (python . t)
-       (shell . t)
-       (calc . t)
-       (js . t)
-       (sqlite . t)
-       (http . t)
-       (R . t)))
-    (setq org-babel-python-command "python3"
-          ;; Syntax highlight in #+BEGIN_SRC blocks
-          org-src-fontify-natively t
-          ;; Don't prompt before running code in org
-          org-confirm-babel-evaluate nil)
+  ;; Point straight's org recipe at the development repository.  For this to
+  ;; take effect it must replace the `(straight-use-package 'org)' call in init.el.
+  ;; (straight-use-package
+  ;;  '(org :type git
+  ;;        :repo "https://git.savannah.gnu.org/git/emacs/org-mode.git"
+  ;;        :local-repo "org"))
 
-    ;; org-mode bindings
-    :bind (("C-c a" . org-agenda)
-           ("C-c b" . org-switchb)
-           ;; Use org-roam capture and links instead of stock org-capture / org-store-link:
-           ;; ("C-c c" . org-capture)
-           ;; ("C-c l" . org-store-link)
-           ("<prior>" . org-move-subtree-up)
-           ("<next>" . org-move-subtree-down))
-
+  (use-package org-latex-preview
+    :straight nil                       ; part of the org package above
     :config
-    (setq org-blank-before-new-entry
-          '((heading . auto)
-            (plain-list-item . auto)))
+    ;; Increase preview width
+    (plist-put org-latex-preview-appearance-options
+               :page-width 0.8)
 
-    (setq org-refile-targets
-          '((org-agenda-files :maxlevel . 2))
-          org-refile-use-outline-path nil
-          org-refile-allow-creating-parent-nodes 'confirm)
+    ;; ;; Use dvisvgm to generate previews
+    ;; ;; You don't need this, it's the default:
+    ;; (setq org-latex-preview-process-default 'dvisvgm)
+    
+    ;; Turn on `org-latex-preview-mode', it's built into Org and much faster/more
+    ;; featured than org-fragtog. (Remember to turn off/uninstall org-fragtog.)
+    (add-hook 'org-mode-hook 'org-latex-preview-mode)
 
-    (setq org-todo-keywords
-          '((sequence "TODO(t!)" "WORKING(w!)" "|"
-                      "CANCELLED(c@)" "GOOGLE(g@)" "DONE(d!)")
-            (sequence "REVIEW(r!)" "|" "DONE(d!)")))
-    (setq org-todo-keyword-faces
-          '(("TODO" :foreground "red" :weight bold)
-            ("REVIEW" :foreground "magenta" :weight bold)
-            ("WORKING" :foreground "orange" :weight bold)
-            ("DONE" :foreground "forest green" :weight bold)
-            ;; Cancelled means this task is no longer relevant.
-            ("CANCELLED" :foreground "forest green" :weight bold)
-            ;; Means that this ToDo has been converted to a Buganizer issue or Todo in
-            ;; Google Workspace.
-            ("GOOGLE" :foreground "forest green" :weight bold))))
+    ;; ;; Block C-n, C-p etc from opening up previews when using `org-latex-preview-mode'
+    ;; (setq org-latex-preview-mode-ignored-commands
+    ;;       '(next-line previous-line mwheel-scroll
+    ;;         scroll-up-command scroll-down-command))
+
+    ;; ;; Enable consistent equation numbering
+    ;; (setq org-latex-preview-numbered t)
+
+    ;; Bonus: Turn on live previews.  This shows you a live preview of a LaTeX
+    ;; fragment and updates the preview in real-time as you edit it.
+    ;; To preview only environments, set it to '(block edit-special) instead
+    (setq org-latex-preview-mode-display-live t)
+
+    ;; More immediate live-previews -- the default delay is 1 second
+    (setq org-latex-preview-mode-update-delay 0.25))
+  #+END_SRC
+
+  Configure the ~org~ package (installed by straight in ~init.el~):
+  - The ~org-directory~ is set to ~~/Notes. Populate ~org-agenda-files~ across the main note subdirectories.
+  - Hide leading stars, emphasis markers, and block bodies on startup while opening headings unfolded
+    (~showeverything~), and require braces (~{}~) for subscripts/superscripts so bare underscores in
+    identifiers are not turned into subscripts.
+  - Enable Org Babel execution (~org-babel-do-load-languages~) for Graphviz ~dot~, ~emacs-lisp~, ~python~
+    (~python3~), ~shell~, ~calc~, ~js~, ~sqlite~, ~http~, and ~R~ without confirmation prompts.
+  - Bind global keys for ~org-agenda~ (~C-c a~) and ~org-switchb~ (~C-c b~), plus ~<prior>~ / ~<next>~
+    (PageUp/PageDown) for moving subtrees up and down.
+  - Configure two-level refile targets across ~org-agenda-files~ and define custom task sequences (~TODO~
+    $\rightarrow$ ~WORKING~ $\rightarrow$ ~CANCELLED~ / ~GOOGLE~ / ~DONE~, and ~REVIEW~ $\rightarrow$ ~DONE~) with timestamp/note logging and
+    color-coded keyword faces.
+  #+BEGIN_SRC emacs-lisp :tangle yes
+    (use-package org
+      :hook (org-mode . rz/org-mode-setup)
+      :init
+      (setq org-default-notes-file "refile.org")
+      (setq org-directory "~/Notes")
+      (setq org-agenda-files
+            (list (expand-file-name org-directory)
+                  (expand-file-name "pages/" org-directory)))
+      (setq org-startup-indented nil
+            org-hide-leading-stars t
+            org-hide-emphasis-markers t
+            ;; Hide #+BEGIN and similar blocks
+            org-hide-block-startup t
+            org-startup-folded 'showeverything
+            org-use-sub-superscripts "{}")
+      (org-babel-do-load-languages
+       'org-babel-load-languages
+       '((dot . t)
+         (emacs-lisp . t)
+         (python . t)
+         (shell . t)
+         (calc . t)
+         (js . t)
+         (sqlite . t)
+         (http . t)
+         (R . t)))
+      (setq org-babel-python-command "python3"
+            ;; Syntax highlight in #+BEGIN_SRC blocks
+            org-src-fontify-natively t
+            ;; Don't prompt before running code in org
+            org-confirm-babel-evaluate nil)
+
+      ;; org-mode bindings
+      :bind (("C-c a" . org-agenda)
+             ("C-c b" . org-switchb)
+             ;; Use org-roam capture and links instead of stock org-capture / org-store-link:
+             ;; ("C-c c" . org-capture)
+             ;; ("C-c l" . org-store-link)
+             ("<prior>" . org-move-subtree-up)
+             ("<next>" . org-move-subtree-down))
+
+      :config
+      (setq org-blank-before-new-entry
+            '((heading . auto)
+              (plain-list-item . auto)))
+
+      (setq org-refile-targets
+            '((org-agenda-files :maxlevel . 2))
+            org-refile-use-outline-path nil
+            org-refile-allow-creating-parent-nodes 'confirm)
+
+      (setq org-todo-keywords
+            '((sequence "TODO(t!)" "WORKING(w!)" "|"
+                        "CANCELLED(c@)" "GOOGLE(g@)" "DONE(d!)")
+              (sequence "REVIEW(r!)" "|" "DONE(d!)")))
+      (setq org-todo-keyword-faces
+            '(("TODO" :foreground "red" :weight bold)
+              ("REVIEW" :foreground "magenta" :weight bold)
+              ("WORKING" :foreground "orange" :weight bold)
+              ("DONE" :foreground "forest green" :weight bold)
+              ;; Cancelled means this task is no longer relevant.
+              ("CANCELLED" :foreground "forest green" :weight bold)
+              ;; Means that this ToDo has been converted to a Buganizer issue or Todo in
+              ;; Google Workspace.
+              ("GOOGLE" :foreground "forest green" :weight bold))))
 #+END_SRC
 
 Modern visual styling for Org headlines, list bullets, blocks, and timestamps via ~org-modern~
@@ -1034,7 +1057,6 @@ Modern visual styling for Org headlines, list bullets, blocks, and timestamps vi
 leaving ~org-modern-table~ disabled so ~valign~ can manage table alignment when needed.
 #+BEGIN_SRC emacs-lisp :tangle yes
   (use-package org-modern
-    :ensure t
     :after org
     :hook ((org-mode . org-modern-mode)
            (org-agenda-finalize . org-modern-agenda))
@@ -1140,7 +1162,6 @@ Configure ~org-roam~ and ~org-roam-dailies~:
   Subheading~), the incoming backlink count ~[N]~, and right-aligned tags.
 #+BEGIN_SRC emacs-lisp :tangle yes
   (use-package org-roam
-    :ensure t
     :custom
     (org-roam-database-connector 'sqlite-builtin)
     :init
@@ -1282,7 +1303,6 @@ Integrate ~org-roam~ with ~consult~ via ~consult-org-roam~:
   backlinks (~C-c n B~), and browsing forward links (~C-c n F~, with manual preview on ~M-.~).
 #+BEGIN_SRC emacs-lisp :tangle yes
   (use-package consult-org-roam
-     :ensure t
      :after org-roam
      :init
      (require 'consult-org-roam)
@@ -1597,7 +1617,6 @@ built-in ~python.el~ and ~python-ts-mode~.
 GTPEL is the standard way to integrate LLM's into emacs.
 #+begin_src emacs-lisp :tangle yes
   (use-package gptel
-    :ensure t
     :bind ("C-c g" . gptel-menu) ; Opens the transient interactive menu
     :config
     ;; Securely fetch your API key from environment variables
