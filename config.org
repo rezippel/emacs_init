@@ -10,7 +10,7 @@ Startup flows through three files in =~/.emacs.d/=:
    manages packages instead.
 2. =~/.emacs.d/init.el=: Bootstraps straight.el and installs ~org~ through it, then checks whether ~config.org~ is newer than ~config.el~. It only tangles ~config.org~
    when needed, and otherwise loads the compiled ~config.el~ directly for fast startup.
-3. =~/.emacs.d/config.org~ (this file): Contains all configuration organized by topic. Only blocks
+3. =~/.emacs.d/config.org (this file): Contains all configuration organized by topic. Only blocks
    marked ~:tangle yes~ (the default via ~#+PROPERTY: header-args:emacs-lisp :tangle yes~) are written
    to ~config.el~; all surrounding Org prose and ~:tangle no~ blocks remain documentation-only.
 
@@ -22,20 +22,6 @@ closures rely on lexical scoping rather than dynamic binding.
 #+END_SRC
 
 * Core Emacs setup
-** Utilities
-First, some small helper functions used across the configuration:
-- ~add-load-path~ appends an expanded directory path to the end of Emacs's ~load-path~.
-- ~capitalize-words~ converts snake_case strings into Title Case with spaces.
-
-#+BEGIN_SRC emacs-lisp :tangle yes
-  (defun add-load-path (new-path)
-    (add-to-list 'load-pathq (expand-file-name new-path)
-                 t))
-
-  (defun capitalize-words (title)
-    (replace-regexp-in-string "_" " " (capitalize title)))
-#+END_SRC
-
 ** Debugger support
 Bind ~C-x x~ in ~emacs-lisp-mode~ to ~edebug-defun~, which instruments the top-level ~defun~ at point so
 stepping through Elisp functions with the built-in Edebug debugger is a single keystroke.
@@ -859,65 +845,67 @@ Define ~rz/org-mode-setup~, which runs via ~org-mode-hook~ in every Org buffer t
 - Prevent accidental edits inside folded regions (~org-fold-catch-invisible-edits~).
   
 #+BEGIN_SRC emacs-lisp :tangle yes
-   (defun rz/org-mode-setup ()
-     "Configure local settings whenever an `org-mode' buffer is opened."
-     (setq fill-column 90
-           org-pretty-entities nil
-           org-adapt-indentation nil
-           org-support-shift-select t)
+  (defun rz/org-mode-setup ()
+    "Configure local settings whenever an `org-mode' buffer is opened."
+    (setq fill-column 90
+          org-pretty-entities nil
+          org-adapt-indentation nil
+          org-support-shift-select t)
 
-     (rz/customize-org-faces)
+    (rz/customize-org-faces)
 
-     ;; Setup Latex formulapreviews
-     ;; 1. Set dvisvgm as the global default processor  (some of the following won't work until
-     ;; Org-mode 10.0
-     (setq org-preview-latex-default-process 'dvisvgm)
-     (setq org-preview-latex-preview-number t) 
+    ;; Setup Latex formulapreviews
+    ;; 1. Set dvisvgm as the global default processor  (some of the following won't work until
+    ;; Org-mode 10.0
+    (setq org-preview-latex-default-process 'dvisvgm)
+    (setq org-preview-latex-preview-number t)
+    (setq org-latex-preview-mode-display-live t)
+    
 
-     ;; 2. Optimize dvisvgm parameters for crisp vectors and precise clipping
-     ;; (--bbox=exact ensures tighter margins; --no-fonts converts glyphs to clean paths)
-     (let ((dvisvgm-recipe (assq 'dvisvgm org-preview-latex-process-alist)))
-       (when dvisvgm-recipe
-         (plist-put (cdr dvisvgm-recipe) :image-converter
-                 '("dvisvgm --page=1- --clipjoin --bbox=exact --no-fonts -o %O %f")
-  		;;   '("dvisvgm --page=1- --clipjoin --bbox=preview --scale=1.25 --relative --no-fonts -o %O %f")
-   		 )))
+    ;; 2. Optimize dvisvgm parameters for crisp vectors and precise clipping
+    ;; (--bbox=exact ensures tighter margins; --no-fonts converts glyphs to clean paths)
+    (let ((dvisvgm-recipe (assq 'dvisvgm org-preview-latex-process-alist)))
+      (when dvisvgm-recipe
+        (plist-put (cdr dvisvgm-recipe) :image-converter
+  		 ;; '("dvisvgm --page=1- --clipjoin --bbox=exact --no-fonts -o %O %f")
+  		 '("dvisvgm --page=1- --clipjoin --bbox=preview --scale=1.25 --relative--no-fonts -o %O %f")
+  		 )))
 
-     ;; 3. Set a balanced initial scale for vector rendering (this is done above)
-     (setq org-format-latex-options
-           '(:foreground default :background default :scale 1.4
-                         :html-foreground "Black"
-                         :html-background "Transparent"
-                         :html-scale 1.4
-                         :matchers ("begin" "$1" "$" "$$" "\\(" "\\[")))
+    ;; 3. Set a balanced initial scale for vector rendering (this is done above)
+    (setq org-format-latex-options
+          '(:foreground default :background default :scale 1.4
+                        :html-foreground "Black"
+                        :html-background "Transparent"
+                        :html-scale 1.4
+                        :matchers ("begin" "$1" "$" "$$" "\\(" "\\[")))
 
-     (when (executable-find "hunspell")
-       (flyspell-mode 1))
+    (when (executable-find "hunspell")
+      (flyspell-mode 1))
 
-     (cond (org-variable-spaced-fonts
-            (variable-pitch-mode 1)
-            (visual-line-mode 1)
-            (when (fboundp 'valign-mode)
-              (valign-mode 1)))
-           (t
-            (auto-fill-mode 1)))
+    (cond (org-variable-spaced-fonts
+           (variable-pitch-mode 1)
+           (visual-line-mode 1)
+           (when (fboundp 'valign-mode)
+             (valign-mode 1)))
+          (t
+           (auto-fill-mode 1)))
 
-     (setq org-fold-catch-invisible-edits 'show
-           org-link-descriptive t))
+    (setq org-fold-catch-invisible-edits 'show
+          org-link-descriptive t))
 
-   (defun rz/org-latex-preview-adjust-ascent (ov)
-     "Shift the baseline of inline LaTeX preview overlays upward."
-     (when-let* ((display (overlay-get ov 'display))
-                 ((eq (car-safe display) 'image)))
-       ;; Only adjust inline equations (no newlines inside the source snippet)
-       (let ((text (buffer-substring-no-properties (overlay-start ov) (overlay-end ov))))
-         (unless (string-match-p "\n" text)
-           ;; :ascent represents percentage of image height above the baseline.
-           ;; Lowering this value (e.g., from 100 to 80) pulls the image UP.
-           (plist-put (cdr display) :ascent 'center)))))
+  (defun rz/org-latex-preview-adjust-ascent (ov)
+    "Shift the baseline of inline LaTeX preview overlays upward."
+    (when-let* ((display (overlay-get ov 'display))
+                ((eq (car-safe display) 'image)))
+      ;; Only adjust inline equations (no newlines inside the source snippet)
+      (let ((text (buffer-substring-no-properties (overlay-start ov) (overlay-end ov))))
+        (unless (string-match-p "\n" text)
+          ;; :ascent represents percentage of image height above the baseline.
+          ;; Lowering this value (e.g., from 100 to 80) pulls the image UP.
+          (plist-put (cdr display) :ascent 'center)))))
 
-   (with-eval-after-load 'org
-     (advice-add 'org--format-latex-make-overlay :after #'rz/org-latex-preview-adjust-ascent))
+  (with-eval-after-load 'org
+    (advice-add 'org--format-latex-make-overlay :after #'rz/org-latex-preview-adjust-ascent))
 #+END_SRC
 
 Load ~valign~ for pixel-level visual alignment of Org tables when using variable-pitch fonts or CJK
