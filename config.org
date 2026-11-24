@@ -6,15 +6,15 @@ The "literate" version of my init file.
 
 Startup flows through three files in =~/.emacs.d/=:
 1. =~/.emacs.d/early-init.el=: Runs before the GUI frame or package manager initializes. It
-   disables ~package-enable-at-startup~ so ~package.el~ does not activate packages; straight.el
+   disables =package-enable-at-startup= so =package.el= does not activate packages; straight.el
    manages packages instead.
-2. =~/.emacs.d/init.el=: Bootstraps straight.el and installs ~org~ through it, then checks whether ~config.org~ is newer than ~config.el~. It only tangles ~config.org~
-   when needed, and otherwise loads the compiled ~config.el~ directly for fast startup.
-3. =~/.emacs.d/config.org (this file): Contains all configuration organized by topic. Only blocks
-   marked ~:tangle yes~ (the default via ~#+PROPERTY: header-args:emacs-lisp :tangle yes~) are written
-   to ~config.el~; all surrounding Org prose and ~:tangle no~ blocks remain documentation-only.
+2. =~/.emacs.d/init.el=: Bootstraps straight.el and installs =org= through it, then checks whether =config.org= is newer than =config.el=. It only tangles =config.org=
+   when needed, and otherwise loads the compiled =config.el= directly for fast startup.
+3. =~/.emacs.d/config.org= (this file): Contains all configuration organized by topic. Only blocks
+   marked =:tangle yes= (the default via =#+PROPERTY: header-args:emacs-lisp :tangle yes=) are written
+   to =config.el=; all surrounding Org prose and =:tangle no= blocks remain documentation-only.
 
-Lexical binding is enabled at the very top of ~config.el~ because packages like ~consult~ and our custom
+Lexical binding is enabled at the very top of =config.el= because packages like =consult= and our custom
 closures rely on lexical scoping rather than dynamic binding.
 #+BEGIN_SRC emacs-lisp :tangle yes
 ;; -*- lexical-binding: t; -*-
@@ -278,7 +278,7 @@ must be set prior to calling ~load-theme~.
 
   (use-package leuven-theme
     :config
-    (load-theme 'leuven t))
+    (load-theme 'leuven-dark t))
 
   (setq org-fontify-whole-heading-line t)
 #+END_SRC
@@ -456,14 +456,16 @@ treesit-install-language-grammar~ to compile the shared libraries for the langua
           (typescript-mode . typescript-ts-mode)
           (yaml-mode . yaml-ts-mode)))
 #+END_SRC
-* Flyspell
+* COMMENT Flyspell
+This section has been replaced by the grammar checking tools that are defined in the next section and are based on the LTex+ servier.
+
 Enable on-the-fly spell checking via ~flyspell~ backed by ~hunspell~ (when ~hunspell~ is installed on the
 system):
 - Uses the ~en_US~ UTF-8 dictionary.
 - Hooks ~flyspell-mode~ into all prose buffers (~text-mode~, which includes ~org-mode~ and ~markdown-mode~)
   and ~flyspell-prog-mode~ (which spell-checks only comments and strings) into programming modes
   (~prog-mode~).
-#+BEGIN_SRC emacs-lisp :tangle yes
+#+BEGIN_SRC emacs-lisp :tangle no
   (when (executable-find "hunspell")
     (use-package flyspell
       :straight (:type built-in)
@@ -480,6 +482,25 @@ system):
              (text-mode . flyspell-mode))))
 #+END_SRC
 
+* Grammar Checking (lsp-ltex-plus)
+Enable grammar and style checking in prose modes (~LaTeX-mode~, ~org-mode~, ~markdown-mode~) via [[https://github.com/ltex-plus/emacs-ltex-plus][lsp-ltex-plus]], which connects Emacs directly to the ~ltex-ls-plus~ LanguageTool server (no ~lsp-mode~ or ~eglot~ required).
+
+Requires ~ltex-ls-plus~ (and a Java runtime) to be installed on the system; ~lsp-ltex-plus-enable-for-modes~ is only called when the server binary is found so startup stays clean on machines without it.
+#+BEGIN_SRC emacs-lisp :tangle yes
+  (use-package lsp-ltex-plus
+    :defer t
+    :custom
+    (lsp-ltex-plus-ls-plus-executable
+     (or (executable-find "ltex-ls-plus")
+         (expand-file-name "~/.local/share/ltex-ls-plus/bin/ltex-ls-plus")))
+    :init
+    (when (file-executable-p
+           (or (executable-find "ltex-ls-plus")
+               (expand-file-name "~/.local/share/ltex-ls-plus/bin/ltex-ls-plus")))
+      (lsp-ltex-plus-enable-for-modes
+       :restrict-to '(LaTeX-mode latex-mode org-mode markdown-mode))))
+#+END_SRC
+
 * Magit
 Load ~magit~ (Emacs's interactive Git porcelain) and bind ~C-x g~ globally to open the ~magit-status~
 buffer for the current repository.
@@ -489,11 +510,11 @@ buffer for the current repository.
 #+END_SRC
 
 * Consult and Friends
-We use the modular **Vertico + Marginalia + Orderless + Consult + Corfu/Cape + Embark** completion
+We use the modular *Vertico + Marginalia + Orderless + Consult + Corfu/Cape + Embark* completion
 stack, which builds directly on Emacs's native ~completing-read~ and ~completion-at-point~ APIs rather
 than replacing them.
 
-**Vertico** renders minibuffer completion candidates in a clean vertical list.
+*Vertico* renders minibuffer completion candidates in a clean vertical list.
 #+BEGIN_SRC emacs-lisp :tangle yes
   (use-package vertico
     :custom (vertico-cycle nil)
@@ -502,7 +523,7 @@ than replacing them.
 #+END_SRC
 
 
-**Marginalia** adds rich right-aligned annotations in the minibuffer (such as docstrings, keybindings
+*Marginalia* adds rich right-aligned annotations in the minibuffer (such as docstrings, keybindings
  on ~M-x~ commands, file permissions/sizes/timestamps on ~C-x C-f~, and buffer modes on ~C-x b~). Pressing
  ~M-A~ in the minibuffer cycles between heavy, light, and no annotations.
 #+BEGIN_SRC emacs-lisp :tangle yes
@@ -517,7 +538,7 @@ than replacing them.
     :init  (marginalia-mode))
 #+END_SRC
 
-**Orderless** lets you filter minibuffer candidates using space-separated search terms (substrings,
+*Orderless* lets you filter minibuffer candidates using space-separated search terms (substrings,
  regular expressions, or initials) in any order. File path completion retains ~partial-completion~ so
  ~~/N/p/p~ expands naturally to ~~/Notes/policy/policy_db.org~.
 #+BEGIN_SRC emacs-lisp :tangle yes
@@ -528,15 +549,15 @@ than replacing them.
      '((file (styles basic partial-completion)))))
 #+END_SRC
 
-**Consult** provides enhanced search and navigation commands with live buffer previews:
-- **Buffer & File Switching**: ~C-x b~ (~consult-buffer~, combining open buffers, recent files, bookmarks,
+*Consult* provides enhanced search and navigation commands with live buffer previews:
+- *Buffer & File Switching*: ~C-x b~ (~consult-buffer~, combining open buffers, recent files, bookmarks,
   and ~org-roam~ buffers narrowed with ~r SPC~), ~C-x r b~ (~consult-bookmark~), ~C-x p b~
   (~consult-project-buffer~).
-- **Search**: ~M-s l~ (~consult-line~ in-buffer search), ~M-s r~ (~consult-ripgrep~ across project/directory),
+- *Search*: ~M-s l~ (~consult-line~ in-buffer search), ~M-s r~ (~consult-ripgrep~ across project/directory),
   ~M-s g~ (~consult-grep~), ~M-s d~ (~consult-find~).
-- **Navigation**: ~M-g g~ (~consult-goto-line~), ~M-g o~ (~consult-outline~), ~M-g i~ (~consult-imenu~), ~M-y~
+- *Navigation*: ~M-g g~ (~consult-goto-line~), ~M-g o~ (~consult-outline~), ~M-g i~ (~consult-imenu~), ~M-y~
   (~consult-yank-pop~ kill-ring browser).
-- **Registers & Xref**: ~M-#~ / ~M-'~ for fast register access and ~consult-xref~ for definition/reference
+- *Registers & Xref*: ~M-#~ / ~M-'~ for fast register access and ~consult-xref~ for definition/reference
   previews.
 #+BEGIN_SRC emacs-lisp :tangle yes
   (use-package consult
@@ -642,7 +663,7 @@ than replacing them.
     )
 #+END_SRC
 
-**Corfu** and **Cape** provide in-buffer auto-completion popups (the in-buffer counterpart to Vertico):
+*Corfu* and *Cape* provide in-buffer auto-completion popups (the in-buffer counterpart to Vertico):
 - ~global-corfu-mode~ displays a lightweight completion popup after typing 2 characters
   (~corfu-auto-prefix 2~) with a 0.2s delay, using ~orderless~ filtering.
 - ~cape~ extends Emacs's ~completion-at-point-functions~ with dynamic word completion from open buffers
@@ -663,7 +684,7 @@ than replacing them.
     (add-hook 'completion-at-point-functions #'cape-file))
 #+END_SRC
 
-**Embark** and **Embark-Consult** provide context-sensitive actions (like a right-click context menu) on any minibuffer candidate or buffer object at point:
+*Embark* and *Embark-Consult* provide context-sensitive actions (like a right-click context menu) on any minibuffer candidate or buffer object at point:
 - ~C-.~ (~embark-act~): Prompts for an action to run on the target at point or current minibuffer
   candidate (e.g., open file in another window, copy path, delete file, follow link, or export all
   ~consult-ripgrep~ results to a persistent buffer via ~E~ / ~embark-export~).
@@ -684,7 +705,7 @@ than replacing them.
 
 * Latex Support
 PDF viewer integration via ~pdf-tools~ (currently disabled via ~:tangle no~):
-#+BEGIN_SRC emacs-lisp :tangle no
+#+BEGIN_SRC emacs-lisp :tangle yes
 
   (when (not (memq 'macos os-environment))
     ;; pdf-tools doesn't exist on mac-os
@@ -721,8 +742,23 @@ detection (~auto-dictionary~):
 
     (use-package reftex
       :straight (:type built-in)
+      :custom
+      (reftex-plug-into-AUCTeX t)
+      (reftex-cite-format 'default)
+      (reftex-cite-prompt-optional-args t);; Prompt for empty optional arguments in cite
+      )
+
+    (use-package cdlatex
       :config
-      (setq reftex-cite-prompt-optional-args t)) ;; Prompt for empty optional arguments in cite
+      ;; Custom environments for TAB expansion, e.g. type "lem" then TAB
+      (setq cdlatex-env-alist
+            '(("lemma" "\\begin{lemma}\nAUTOLABEL\n?\n\\end{lemma}\n" nil)
+              ("theorem" "\\begin{theorem}\nAUTOLABEL\n?\n\\end{theorem}\n" nil)
+              ("proof" "\\begin{proof}\n?\n\\end{proof}\n" nil)))
+      (setq cdlatex-command-alist
+            '(("lem" "Insert lemma env" "" cdlatex-environment ("lemma") t nil)
+              ("thm" "Insert theorem env" "" cdlatex-environment ("theorem") t nil)
+              ("prf" "Insert proof env" "" cdlatex-environment ("proof") t nil))))
 
     (when (executable-find "hunspell")
       (use-package auto-dictionary
@@ -738,23 +774,40 @@ compilation, and ~reftex~ / ~flyspell~ activation in LaTeX buffers.
     (use-package tex
       :straight auctex
       :mode ("\\.tex\\'" . LaTeX-mode)
-      :config
-      (setq TeX-source-correlate-mode t
-            TeX-source-correlate-method 'synctex
-            TeX-auto-save t
-            TeX-parse-self t
-            ;; TeX-master "paper.tex"
-            TeX-macro-private (list "~/texmf/tex/latex/")
-            reftex-plug-into-AUCTeX t
-            TeX-view-program-selection '((output-pdf "PDF Tools"))
-            TeX-source-correlate-start-server t)
+      :custom
+      (TeX-auto-save t)
+      (TeX-parse-self t)
+      (TeX-master nil)
+      (TeX-PDF-mode t)
+      (TeX-source-correlate-mode t)
+      (TeX-source-correlate-start-server t)
+      ;; (TeX-source-correlate-method 'synctex)
+      ;; (TeX-macro-private (list "~/texmf/tex/latex/"))
+      ;; (reftex-plug-into-AUCTeX t)
+      (TeX-view-program-selection '((output-pdf "PDF Tools")))
+      (TeX-view-program-list '(("PDF Tools" TeX-pdf-tools-sync-view)))
+      :hook 
+      (LaTeX-mode . visual-line-mode)
+      (LaTeX-mode . turn-on-reftex)
+      (LaTeX-mode . turn-on-cdlatex)
+      (LaTeX-mode . outline-minor-mode)
+      ;; (LaTeX-mode . flyspell-mode)
       ;; Update PDF buffers after successful LaTeX runs
-      (add-hook 'TeX-after-compilation-finished-functions
-                #'TeX-revert-document-buffer)
-      (add-hook 'LaTeX-mode-hook #'turn-on-reftex)
-      (when (executable-find "hunspell")
-        (add-hook 'LaTeX-mode-hook #'flyspell-mode)))
+      (TeX-after-compilation-finished-functions . TeX-revert-document-buffer)
+      )
 
+    ;; Use latexmk as the build command
+    (use-package auctex-latexmk
+      :after tex
+      :config
+      (auctex-latexmk-setup)
+      (setq auctex-latexmk-inherit-TeX-PDF-mode t))
+
+    ;; In-Emacs PDF viewer (needs system build tools/poppler; see its README)
+    (use-package pdf-tools
+      :config (pdf-loader-install))
+
+    (add-to-list 'auto-mode-alist '("\\.tex\\'" . LaTeX-mode))
     (add-to-list 'auto-mode-alist '("\\.sty\\'" . LaTeX-mode))
     (add-to-list 'auto-mode-alist '("\\.bbl\\'" . LaTeX-mode))
     (add-to-list 'auto-mode-alist '("\\.bib\\'" . bibtex-mode)))
@@ -987,6 +1040,7 @@ Include the prototype verison latex-preview
             ;; Hide #+BEGIN and similar blocks
             org-hide-block-startup t
             org-startup-folded 'showeverything
+            org-startup-with-latex-preview t
             org-use-sub-superscripts "{}")
       (org-babel-do-load-languages
        'org-babel-load-languages
@@ -1602,21 +1656,97 @@ built-in ~python.el~ and ~python-ts-mode~.
 
 * GPTEL
 
-GTPEL is the standard way to integrate LLM's into emacs.
+GPTEL is the standard way to integrate LLMs into Emacs. The Gemini helpers share an asynchronous
+fetcher (~my/gptel--fetch-gemini-models~) that queries the Gemini API for chat-capable
+(~generateContent~) models: ~my/gptel-refresh-gemini-models~ updates the configured ~gptel~ backend's
+model list on startup (and on demand), and ~show-gemini-models~ displays them in a temporary buffer.
 #+begin_src emacs-lisp :tangle yes
+  (defconst my/gemini-models-url
+    "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000"
+    "Gemini API endpoint that lists available models.")
+
+  (defun my/gptel--gemini-backend (&optional backend-name)
+    "Return the gptel backend named BACKEND-NAME (default \"Gemini\")."
+    (require 'gptel)
+    (let ((name (or backend-name "Gemini")))
+      (or (gptel-get-backend name)
+          (user-error "gptel backend %S not found" name))))
+
+  (defun my/gptel--fetch-gemini-models (backend callback)
+    "Asynchronously fetch chat-capable Gemini models using BACKEND's API key.
+  Call CALLBACK with a list of (ID . DISPLAY-NAME) pairs in API order, where ID
+  is a symbol such as `gemini-2.5-pro'.  Only models supporting
+  \"generateContent\" are included.  On failure, report with `message' and do
+  not call CALLBACK."
+    (let ((url-request-extra-headers
+           ;; Header rather than ?key= so the key never appears in URLs or errors.
+           `(("x-goog-api-key" . ,(gptel--get-api-key (gptel-backend-key backend))))))
+      (url-retrieve
+       my/gemini-models-url
+       (lambda (status)
+         (unwind-protect
+             (if-let* ((err (plist-get status :error)))
+                 (message "gptel: Failed to fetch Gemini models: %S" err)
+               (goto-char (point-min))
+               (when (re-search-forward "\r?\n\r?\n" nil t)
+                 (let (models)
+                   (seq-doseq (m (alist-get 'models (json-parse-buffer :object-type 'alist)))
+                     (when (seq-contains-p (alist-get 'supportedGenerationMethods m)
+                                           "generateContent")
+                       (push (cons (intern (string-remove-prefix "models/" (alist-get 'name m)))
+                                   (alist-get 'displayName m))
+                             models)))
+                   (funcall callback (nreverse models)))))
+           (kill-buffer (current-buffer))))
+       nil t)))
+
+  (defun my/gptel-refresh-gemini-models (&optional backend-name)
+    "Asynchronously replace BACKEND-NAME's model list with the models the API offers.
+  BACKEND-NAME defaults to \"Gemini\"."
+    (interactive)
+    (let ((backend (my/gptel--gemini-backend backend-name)))
+      (my/gptel--fetch-gemini-models
+       backend
+       (lambda (models)
+         (if (null models)
+             (message "gptel: No generateContent models returned by Gemini API.")
+           ;; Re-register via the public constructor: `setf' on struct accessors
+           ;; fails because this file is macroexpanded before gptel loads.
+           (let ((new (gptel-make-gemini (gptel-backend-name backend)
+                        :key (gptel-backend-key backend)
+                        :stream (gptel-backend-stream backend)
+                        :models (mapcar #'car models))))
+             (when (eq gptel-backend backend)
+               (setq gptel-backend new)))
+           (message "gptel: Loaded %d Gemini models." (length models)))))))
+
   (use-package gptel
-    :bind ("C-c g" . gptel-menu) ; Opens the transient interactive menu
+    :bind (("C-c g" . gptel-menu) ; Opens the transient interactive menu
+  	 ("C-c G" . gptel))
     :config
     ;; Securely fetch your API key from environment variables
+    (setq gptel-api-key (getenv "GEMINI_API_KEY"))
     (setq gptel-backend (gptel-make-gemini "Gemini"
-                        :key (getenv "GEMINI_API_KEY")
-                        :stream t))
+                        :key gptel-api-key
+                        :stream t
+  		      ))
+    (my/gptel-refresh-gemini-models "Gemini")
     ;; Alternatively use 'gemini-pro-latest for deeper analysis.
-    (setq gptel-model 'gemini-flash-latest)
+    (setq gptel-model 'gemini-4-hydrogen)
     (setq gptel-default-mode 'org-mode)
+    (setq gptel-display-buffer-action
+  	'(display-buffer-in-side-window
+  	  (side . right)
+  	  (window-width . 0.38)))
+
+    ;; 3. Visually distinguish prompts from AI responses
+    (setq gptel-prompt-prefix-alist '((org-mode . "* Prompt\n")
+  				    (markdown-mode . "### Prompt\n"))
+  	gptel-response-prefix-alist '((org-mode . "** Response\n")
+  				      (markdown-mode . "#### Response\n")))
     (setq gptel-directives
-        '((default . "You are a concise, helpful assistant living inside Emacs.")
-          
+        '((default . "You are a concise, helpful assistant living inside Emacs.
+  Format all responses in Org mode. Use \\(...\\) for inline math and \\[...\\] for display math; never use $...$ or $$...$$.")
           (proofread .
            "You are a technical editor for theoretical computer science and mathematics.
   Refine the text for clarity and conciseness while preserving all LaTeX math delimiters, macros, and citation keys intact.
@@ -1624,10 +1754,90 @@ GTPEL is the standard way to integrate LLM's into emacs.
 
           (lean-formalizer .
            "You are an interactive theorem proving expert specializing in Lean 4 and Mathlib.
-  Analyze informal mathematical arguments, clarify type signatures, identify missing edge cases, and propose concrete tactic sequences.")))
-    )
+  Analyze informal mathematical arguments, clarify type signatures, identify missing edge cases, and propose concrete tactic sequences.
+  Format responses in Org mode using \\(...\\) for inline math and \\[...\\] for display math.")))
+
+    (defun my/gptel--in-code-or-verbatim-p ()
+      "Return non-nil if point is inside an Org code/verbatim element."
+      (memq (org-element-type (org-element-context))
+            '(src-block example-block export-block fixed-width code verbatim)))
+
+    (defun my/gptel-normalize-latex-delimiters (beg end)
+      "Convert $...$ and $$...$$ to \\(...\\) and \\[...\\] in a gptel response."
+      (when (and (derived-mode-p 'org-mode)
+                 (< beg end))
+        (save-excursion
+          (save-restriction
+            (narrow-to-region beg end)
+            ;; Display math: $$...$$ -> \[...\]
+            (goto-char (point-min))
+            (while (re-search-forward "\\$\\$\\(\\(?:.\\|\n\\)+?\\)\\$\\$" nil t)
+              (unless (or (eq (char-before (match-beginning 0)) ?\\)
+                          (save-match-data (my/gptel--in-code-or-verbatim-p)))
+                (replace-match (concat "\\[" (match-string 1) "\\]") t t)))
+            ;; Inline math: $...$ -> \(...\) (avoiding whitespace/digits/code)
+            (goto-char (point-min))
+            (while (re-search-forward
+                    "\\(?:^\\|[^\\\\$]\\)\\(\\$\\([^ \t\n$]\\(?:[^$\n]*?[^ \t\n$\\\\]\\)?\\)\\$\\)"
+                    nil t)
+              (unless (or (looking-at-p "[0-9$]")
+                          (save-match-data (my/gptel--in-code-or-verbatim-p)))
+                (replace-match (concat "\\(" (match-string 2) "\\)") t t nil 1)))))))
+
+    (defun my/gptel-preview-latex (beg end)
+      "Render LaTeX previews in a newly inserted gptel response."
+      (when (and (derived-mode-p 'org-mode)
+                 (< beg end))
+        (save-excursion
+          (save-restriction
+            (narrow-to-region beg end)
+            (org-latex-preview 'buffer)))))
+
+    (add-hook 'gptel-post-response-functions #'my/gptel-normalize-latex-delimiters -10)
+    (add-hook 'gptel-post-response-functions #'my/gptel-preview-latex))
+
+
+  (defun show-gemini-models (&optional backend-name)
+    "Show the chat-capable Gemini models in a *Gemini Available Models* buffer.
+  BACKEND-NAME defaults to \"Gemini\"."
+    (interactive)
+    (my/gptel--fetch-gemini-models
+     (my/gptel--gemini-backend backend-name)
+     (lambda (models)
+       (with-output-to-temp-buffer "*Gemini Available Models*"
+         (pcase-dolist (`(,id . ,display-name) models)
+           (princ (format "%-32s | %s\n" id display-name)))))))
 #+end_src
 
+** GPTEL Agent
+[[https://github.com/karthink/gptel-agent][gptel-agent]] extends ~gptel~ with an autonomous agentic loop, built-in tools (web search/URL
+fetching, local file read/write/edit, Emacs introspection/Elisp evaluation, and Bash), and
+specialized sub-agents (=executor=, =researcher=, =introspector=).
+
+Usage:
+- Run ~M-x gptel-agent~ to open a dedicated agent session in the current project, or include
+  ~@gptel-agent~ in any prompt (or select the ~gptel-agent~ / ~gptel-plan~ preset in ~C-c g~).
+
+Customizing ~gptel-agent~:
+- *Custom agent & sub-agent definitions:* Add a directory of Markdown or Org agent files to
+  ~gptel-agent-dirs~ (call ~(gptel-agent-update)~ afterward, or run ~M-x gptel-agent-update~ to
+  reload definitions).
+- *Tool confirmations & permissions:* By default, everything except web search, URL fetching, and
+  reading local files asks for confirmation; customize ~gptel-confirm-tool-calls~ or individual
+  tools/presets via ~gptel~'s preset system.
+- *Read-only planning mode:* Switch to the ~gptel-plan~ preset in ~gptel-menu~ (~C-c g~) when you
+  want a plan without file modifications.
+#+begin_src emacs-lisp :tangle yes
+  (use-package gptel-agent
+    :after gptel
+    :config
+    ;; Load built-in tools and register agent/sub-agent definitions from `gptel-agent-dirs'.
+    (require 'gptel-agent-tools)
+    (gptel-agent-update)
+    ;; Add custom agent directories before calling `gptel-agent-update', e.g.:
+    ;; (add-to-list 'gptel-agent-dirs (expand-file-name "agents/" user-emacs-directory))
+    )
+#+end_src
 
 * Customization
 

@@ -16,7 +16,9 @@
  '(package-vc-selected-packages
    '((org :url "https://git.savannah.gnu.org/git/emacs/org-mode.git"
 	  :lisp-dir "lisp" :make '("autoloads" "info") :doc
-	  "doc/org.texi"))))
+	  "doc/org.texi")))
+ '(safe-local-variable-values
+   '((eglot-workspace-configuration . my/ltex-workspace-config))))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
