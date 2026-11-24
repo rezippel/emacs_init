@@ -1,0 +1,1 @@
+(:en-US ["Lüroth" "Herzliya" "Kozen" "Trager"])

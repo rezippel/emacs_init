@@ -16,6 +16,8 @@ tramp
 .eask/
 .eldev/
 .keg/
+auto-save/
+backups/
 elpa/
 eln-cache/
 transient/
